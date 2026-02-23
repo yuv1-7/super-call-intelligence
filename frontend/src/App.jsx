@@ -9,9 +9,13 @@ import SuggestionCard from './components/SuggestionCard.jsx';
 import PostCallCard from './components/PostCallCard.jsx';
 
 // Determine WebSocket URL
+// Determine WebSocket URL
+// If the page is loaded over HTTPS, use WSS (secure). Otherwise, use WS.
+const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
 const WS_URL = import.meta.env.DEV
     ? `ws://${window.location.hostname}:8000/stream`
-    : `ws://${window.location.host}/stream`;
+    : `${protocol}//${window.location.host}/stream`;
 
 export default function App() {
     const [callActive, setCallActive] = useState(false);

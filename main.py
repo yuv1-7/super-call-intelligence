@@ -344,3 +344,12 @@ if os.path.isdir(frontend_dist):
     @app.get("/")
     async def serve_frontend():
         return FileResponse(os.path.join(frontend_dist, "index.html"))
+
+    # ADD THESE TWO ROUTES TO FIX THE 404 ERRORS:
+    @app.get("/logo.png")
+    async def serve_logo():
+        return FileResponse(os.path.join(frontend_dist, "logo.png"))
+        
+    @app.get("/favicon.ico")
+    async def serve_favicon():
+        return FileResponse(os.path.join(frontend_dist, "favicon.ico"))
