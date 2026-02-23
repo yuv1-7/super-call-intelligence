@@ -144,6 +144,13 @@ async def stream_endpoint(websocket: WebSocket):
                     "data": evaluation,
                 })
                 logger.info("📋 Post-call evaluation sent")
+                
+                # 🔄 Reset state for the next call on this connection
+                call_transcript = []
+                call_start_time = time.time()
+                detected_intent = None
+                detected_member = None
+                
                 continue
 
             # ═══════════════════════════════════════════
@@ -206,7 +213,9 @@ async def stream_endpoint(websocket: WebSocket):
             # ═══════════════════════════════════════════
             # 🧠 SLOW PATH — LangGraph (only on finalized)
             # ═══════════════════════════════════════════
-            if is_finalized and graph:
+            # Only trigger AI analysis and suggest new responses if the Customer is speaking.
+            # If the Agent is speaking, they do not need a new script generated based on their own words.
+            if is_finalized and graph and speaker_label != "Agent":
                 await websocket.send_json({
                     "type": "processing",
                     "data": {"message": "Analyzing transcript..."},
@@ -225,7 +234,7 @@ async def stream_endpoint(websocket: WebSocket):
                     "intent": None,
                     "claim_type": None,
                     "entities": None,
-                    "member_data": None,
+                    "member_data": detected_member,
                     "knowledge_docs": None,
                     "compliance_alerts": None,
                     "suggestion": None,

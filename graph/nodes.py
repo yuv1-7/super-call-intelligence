@@ -42,9 +42,12 @@ async def member_node(state: dict) -> dict:
     Fetch policyholder details from mock CRM using extracted entities.
     """
     entities = state.get("entities") or {}
-    member = None
+    
+    # Preserve member data if it was already fetched (e.g., by fast-path regex)
+    member = state.get("member_data")
 
-    if entities:
+    # Only fetch from CRM if we haven't found the member yet
+    if not member and entities:
         member = get_member(
             policy_id=entities.get("policy_id"),
             name=entities.get("name"),
