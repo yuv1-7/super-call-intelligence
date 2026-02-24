@@ -209,6 +209,8 @@ async def stream_endpoint(websocket: WebSocket):
                         "data": member,
                     })
                     logger.info(f"⚡ Fast path: sent profile for {policy_id}")
+                else:
+                    logger.info(f"⚡ Fast path: no member found for {policy_id}")
 
             # ═══════════════════════════════════════════
             # 🧠 SLOW PATH — LangGraph (only on finalized)
@@ -281,12 +283,26 @@ async def stream_endpoint(websocket: WebSocket):
                     "data": {},
                 })
 
+                # Determine member data context for the LLM
+                member_data_for_llm = result.get("member_data")
+                if not member_data_for_llm and result.get("entities"):
+                    # A lookup was attempted but failed — tell the LLM
+                    attempted = result["entities"]
+                    parts = []
+                    if attempted.get("policy_id"):
+                        parts.append(f"policy number '{attempted['policy_id']}'")
+                    if attempted.get("phone"):
+                        parts.append(f"phone number '{attempted['phone']}'")
+                    if parts:
+                        member_data_for_llm = f"LOOKUP FAILED: No account found for {' or '.join(parts)}. The caller may have provided incorrect information."
+
                 # Send suggested response as a stream
                 suggestion_stream = generate_agent_suggestion_stream(
                     transcript=text,
                     full_transcript=formatted_transcript,
                     intent=result.get("intent"),
-                    member_data=result.get("member_data"),
+                    claim_type=result.get("claim_type"),
+                    member_data=member_data_for_llm,
                     knowledge_docs=result.get("knowledge_docs"),
                     compliance_alerts=result.get("compliance_alerts"),
                 )

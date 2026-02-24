@@ -1,7 +1,7 @@
 [
   {
     "docId": "KB-CAR-001",
-    "title": "Comprehensive Car Accident Protocol",
+    "title": "Car Accident FNOL – Standard Operating Procedure",
     "category": "car_insurance",
     "tags": [
       "accident",
@@ -11,7 +11,7 @@
       "damage",
       "hit"
     ],
-    "content": "Super Insurance Car FNOL Operational Guidelines:\n- Empathy and safety verification are paramount on all first notices of loss.\n- Agents must document the date, time, and specific location of the incident.\n- Agents should determine basic vehicle drivability.\n- Critical: Callers must be explicitly advised not to admit fault to any parties on the scene.\n- Claims adjustments generally commence within 24-48 hours. Agents should clearly communicate this sequence of operations.\n- This protocol applies strictly to the generation of the initial property damage/liability claim pipeline."
+    "content": "Super Insurance – Car Accident First Notice of Loss (FNOL)\n\nProcedure:\n1. Confirm the safety of all parties involved in the accident.\n2. Record the date, time, and specific location of the incident.\n3. Obtain a brief description of how the accident occurred.\n4. Determine whether the vehicle is drivable or requires towing.\n5. Advise the caller not to admit fault to any other parties at the scene.\n6. If a police report was filed, collect the report number.\n7. Inform the caller that a claims adjuster will contact them within 24-48 hours to assess the damage and guide next steps.\n8. This procedure covers the initial property damage and liability claim intake."
   },
   {
     "docId": "KB-CAR-002",
@@ -24,11 +24,11 @@
       "vehicle",
       "missing"
     ],
-    "content": "When a policyholder reports a stolen vehicle:\n1. Confirm that a police report has been filed. If not, instruct them to file one immediately.\n2. Obtain the police report number and the precinct/station.\n3. Collect the last known location and time the vehicle was last seen.\n4. Ask if the vehicle had any tracking devices (GPS, LoJack, etc.).\n5. Note the vehicle details: make, model, year, color, VIN, license plate.\n6. Ask if all keys are accounted for.\n7. Inform the policyholder that theft claims typically require a 30-day waiting period before settlement.\n8. Advise them to contact their lender/leasing company if applicable.\n9. A Special Investigations Unit (SIU) review may be initiated for all theft claims over $25,000."
+    "content": "Super Insurance – Vehicle Theft Reporting\n\nProcedure:\n1. A police report is mandatory for all theft claims. If one has not been filed, the caller must file one before the claim can proceed.\n2. Collect the police report number and the reporting station.\n3. Record the last known location and time the vehicle was last seen.\n4. Note whether the vehicle had any tracking devices (GPS, LoJack, etc.).\n5. Confirm vehicle details: make, model, year, color, VIN, and license plate.\n6. Verify that all keys are accounted for.\n7. Theft claims require a 30-day waiting period before settlement can begin.\n8. If the vehicle has an outstanding loan or lease, the caller should notify their lender.\n9. Claims exceeding ₹20,00,000 are automatically referred to the Special Investigations Unit (SIU) for review."
   },
   {
     "docId": "KB-CAR-003",
-    "title": "Towing & Rental Disclosures",
+    "title": "Towing & Rental Coverage Policy",
     "category": "car_insurance",
     "tags": [
       "towing",
@@ -37,11 +37,11 @@
       "coverage",
       "roadside"
     ],
-    "content": "Super Insurance Towing & Vehicle Replacement Coverage Rules:\n- Towing/Roadside Assistance coverage is exclusively applicable to accounts with 'Comprehensive' policies or the 'Roadside Assistance' Add-On.\n- On covered accounts, towing is authorized up to $150 per incident.\n- Rental Automobile coverage is only provided via the 'Rental Reimbursement' Add-On (Rate: $40/day for up to 30 days).\n- Third-Party Only liability policies do NOT inherently carry towing, roadside, or rental coverages.\n- Uncovered claimants requesting dispatch or rental provisions must pre-authorize their own out-of-pocket expenditures for any agency-arranged assistance."
+    "content": "Super Insurance – Towing & Vehicle Replacement Coverage\n\nCoverage Rules:\n- Towing and Roadside Assistance is included with Comprehensive policies and the Roadside Assistance add-on.\n- Covered towing is authorized up to ₹12,000 per incident.\n- Rental vehicle reimbursement is available only with the Rental Reimbursement add-on (₹3,000/day for up to 30 days).\n- Third-Party Only liability policies do not include towing, roadside, or rental coverage.\n- For uncovered policyholders, towing and rental services can still be arranged but are billed directly to the customer as out-of-pocket expenses."
   },
   {
     "docId": "KB-CAR-004",
-    "title": "Car Vandalism Claims",
+    "title": "Vehicle Vandalism Claims",
     "category": "car_insurance",
     "tags": [
       "vandalism",
@@ -51,11 +51,11 @@
       "window",
       "graffiti"
     ],
-    "content": "When a policyholder reports vehicle vandalism:\n1. Confirm a police report has been filed.\n2. Document the type of vandalism: keyed paint, broken windows, slashed tires, graffiti, etc.\n3. Vandalism claims fall under Comprehensive coverage – verify the policyholder has this coverage.\n4. The deductible for Comprehensive claims applies (typically $500 or $1,000).\n5. Ask for photographs of the damage.\n6. Schedule an adjuster visit or direct to an approved repair facility.\n7. Advise the policyholder that filing a vandalism claim generally does NOT increase premiums."
+    "content": "Super Insurance – Vandalism Claim Procedure\n\nProcedure:\n1. A police report is required for all vandalism claims.\n2. Document the type of damage: keyed paint, broken windows, slashed tires, graffiti, etc.\n3. Vandalism falls under Comprehensive coverage. The policyholder must hold a Comprehensive policy for the claim to be valid.\n4. The standard Comprehensive deductible applies (typically ₹10,000 or ₹25,000).\n5. Photographs of the damage are required (minimum 4 angles).\n6. An adjuster visit will be scheduled, or the caller may visit an approved repair facility.\n7. Filing a vandalism claim generally does not affect the policyholder's premium."
   },
   {
     "docId": "KB-CAR-005",
-    "title": "Evidentiary Documentation Requirements",
+    "title": "Required Documents – Car Insurance Claims",
     "category": "car_insurance",
     "tags": [
       "documents",
@@ -64,7 +64,7 @@
       "checklist",
       "car"
     ],
-    "content": "Standard Documentation Matrix for Claims Validation:\n- Formal Police Report (Mandatory for theft, vandalism, and multi-vehicle hit-and-runs).\n- Photographic evidence of vehicle trauma (Minimum 4 diagnostic angles).\n- Third-party insurance and contact dossiers (for collision triangulation).\n- Independent repair facility written estimates.\n- Note: Agents operate to advise callers on upcoming required documents, empowering them for smooth transitions to dedicated Claims Adjusters."
+    "content": "Super Insurance – Car Claims Documentation Checklist\n\nRequired Documents:\n- Police report (mandatory for theft, vandalism, and hit-and-run claims)\n- Photographs of vehicle damage (minimum 4 angles)\n- Third-party insurance details and contact information (for multi-vehicle collisions)\n- Written repair estimate from an independent or approved facility\n- Driving license of the person operating the vehicle at the time of incident\n\nNote: The agent collects preliminary details during the FNOL call. The assigned Claims Adjuster will request formal documentation during the assessment phase."
   },
   {
     "docId": "KB-LIFE-001",
@@ -79,11 +79,11 @@
       "died",
       "passing"
     ],
-    "content": "When a beneficiary files a death claim:\n1. Express condolences sincerely and professionally.\n2. Verify the caller's identity – ask for full name and relationship to the deceased.\n3. Confirm the policy number and the name of the insured.\n4. Ask for the date, location, and cause of death.\n5. Inform the beneficiary about required documents:\n   - Certified death certificate (original or certified copy)\n   - Completed claim form (will be mailed or emailed)\n   - Photo ID of the beneficiary\n6. Explain the payout process: typically 30-60 days after all documents are received.\n7. Payout options: lump sum, installments, or annuity.\n8. If the death occurred within the 2-year contestability period, advise that additional review may be required."
+    "content": "Super Insurance – Life Insurance Death Claim Procedure\n\nProcedure:\n1. Express condolences to the caller sincerely and professionally.\n2. Locate the policy using the policy number or the registered phone number.\n3. Verify the caller's full legal name against the beneficiary records on file.\n4. Record the following details about the insured's passing:\n   - Date of death\n   - Location of death\n   - Cause of death\n5. Required documents for claim processing:\n   - Certified death certificate (original or certified copy)\n   - Completed beneficiary claim form (to be mailed or emailed to the caller)\n   - Government-issued photo ID of the claimant\n6. Payout timeline: Claims are typically processed within 30-60 days after all documents are received.\n7. Payout options available: lump sum, installments, or annuity.\n8. If the death occurred within the 2-year contestability period, the claim is subject to additional review by the Underwriting department."
   },
   {
     "docId": "KB-LIFE-002",
-    "title": "Life Insurance – Accidental Death Benefits",
+    "title": "Life Insurance – Accidental Death Benefits (AD&D)",
     "category": "life_insurance",
     "tags": [
       "accidental",
@@ -92,11 +92,11 @@
       "AD&D",
       "life"
     ],
-    "content": "Accidental Death & Dismemberment (AD&D) coverage:\n- AD&D pays an additional benefit (typically equal to the base policy amount) if death results from a covered accident.\n- Covered accidents include: motor vehicle accidents, falls, drowning, and other sudden events.\n- NOT covered: death due to illness, suicide, drug overdose, or participation in illegal activities.\n- The beneficiary must provide:\n  - Police report or accident report\n  - Autopsy report (if performed)\n  - Medical examiner's findings\n- AD&D claims are reviewed by the Special Claims Unit and may take 60-90 days."
+    "content": "Super Insurance – Accidental Death & Dismemberment (AD&D) Coverage\n\nOverview:\nAD&D pays an additional benefit (typically equal to the base coverage amount) if the insured's death results from a qualifying accident.\n\nCovered Events:\n- Motor vehicle accidents\n- Falls\n- Drowning\n- Other sudden, unforeseen accidents\n\nExclusions:\n- Death due to illness or natural causes\n- Suicide\n- Drug overdose\n- Participation in illegal activities\n\nAdditional Documents Required:\n- Police report or official accident report\n- Autopsy report (if performed)\n- Medical examiner's findings\n\nProcessing: AD&D claims are reviewed by the Special Claims Unit. Processing time is 60-90 days."
   },
   {
     "docId": "KB-LIFE-003",
-    "title": "Life Insurance – Beneficiary Verification",
+    "title": "Life Insurance – Beneficiary Verification Process",
     "category": "life_insurance",
     "tags": [
       "beneficiary",
@@ -105,7 +105,7 @@
       "life",
       "claim"
     ],
-    "content": "Beneficiary verification process:\n1. Verify the beneficiary's full legal name matches the policy records.\n2. Confirm date of birth, SSN (last 4 digits), and current address.\n3. If the beneficiary is a minor, a legal guardian or trustee must file the claim.\n4. If there are multiple beneficiaries, each must file separately.\n5. If the named beneficiary is deceased, the contingent beneficiary is contacted.\n6. If no beneficiary is named, the payout goes to the insured's estate.\n7. In case of disputed beneficiaries, the claim is placed on hold and Legal is notified.\n8. All beneficiary information is HIPAA-protected and must not be disclosed to unauthorized parties."
+    "content": "Super Insurance – Beneficiary Verification Standards\n\nVerification Steps:\n1. The beneficiary's full legal name must match the policy records.\n2. Confirm date of birth, Aadhaar/PAN number (last 4 digits), and current address.\n3. Minor beneficiaries: A legal guardian or appointed trustee must file the claim.\n4. Multiple beneficiaries: Each beneficiary files a separate claim for their designated share.\n5. Deceased beneficiary: The contingent (secondary) beneficiary is contacted.\n6. No named beneficiary: The payout is directed to the insured's estate.\n7. Disputed beneficiaries: The claim is placed on hold and referred to the Legal department.\n\nPrivacy: All beneficiary information is protected under HIPAA and must not be disclosed to unauthorized parties."
   },
   {
     "docId": "KB-LIFE-004",
@@ -118,11 +118,11 @@
       "checklist",
       "life"
     ],
-    "content": "Required documents for life insurance death claims:\n□ Certified death certificate (original or certified copy)\n□ Completed beneficiary claim form\n□ Government-issued photo ID of the claimant\n□ Proof of relationship (if not named beneficiary)\n□ Policy document (if available)\n□ Medical records / autopsy report (for AD&D or contestability review)\n□ Police report (for accidental death)\n□ Power of Attorney documents (if filing on behalf of another)\n□ Court order (for contested claims)"
+    "content": "Super Insurance – Life Insurance Claims Document Checklist\n\nRequired:\n□ Certified death certificate (original or certified copy)\n□ Completed beneficiary claim form\n□ Government-issued photo ID of the claimant\n\nConditional:\n□ Proof of relationship to the insured (if claimant is not a named beneficiary)\n□ Policy document (if available, not mandatory)\n□ Medical records or autopsy report (required for AD&D claims or contestability review)\n□ Police report (required for accidental death claims)\n□ Power of Attorney documents (if filing on behalf of another beneficiary)\n□ Court order (for contested or disputed claims)"
   },
   {
     "docId": "KB-GEN-001",
-    "title": "Fraud Indicators – Red Flags",
+    "title": "Fraud Indicators – Red Flags Reference Guide",
     "category": "general",
     "tags": [
       "fraud",
@@ -130,6 +130,6 @@
       "red flag",
       "investigation"
     ],
-    "content": "Common fraud red flags to watch for during FNOL calls:\n- Claim filed immediately after policy inception or coverage increase.\n- Caller is overly knowledgeable about the claims process.\n- Inconsistent or rehearsed-sounding description of events.\n- Loss occurred in a remote area with no witnesses.\n- Caller is pressuring for a quick settlement.\n- Vehicle was recently listed for sale (theft claims).\n- Policy was recently changed to add comprehensive coverage (theft/vandalism).\n- Multiple prior claims in a short period.\n- If any red flags are detected, note them in the claim and flag for SIU review. Do NOT accuse the caller."
+    "content": "Super Insurance – Fraud Detection Reference\n\nCommon Red Flags:\n- Claim filed immediately after policy inception or a recent coverage increase\n- Caller demonstrates unusual familiarity with the claims process\n- Description of events sounds inconsistent or rehearsed\n- Incident occurred in a remote location with no witnesses\n- Caller is pressuring for an expedited settlement\n- Vehicle was recently listed for sale prior to a theft claim\n- Comprehensive coverage was recently added before a theft or vandalism claim\n- Multiple prior claims filed within a short period\n\nProtocol: If any red flags are observed, document them in the claim notes and flag the file for SIU (Special Investigations Unit) review. Do not confront or accuse the caller."
   }
 ]

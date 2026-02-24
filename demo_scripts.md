@@ -101,12 +101,12 @@ These scripts are designed to showcase the full power of your application. Read 
 **Agent:** "I am so incredibly sorry for your loss. I can certainly guide you through this process. Do you happen to have his policy number or phone number?"
 
 **Customer:** "Yes, his policy number is L I F E 2 0 0 0 0 1."
-*(Profile loads for Suresh Menon. The AI sees he is the policyholder and sees his beneficiaries. The AI will suggest confirming the caller's identity since they are not the policyholder.)*
+*(Profile loads for Suresh Menon. The AI sees he is the policyholder and sees his beneficiaries. The AI deduces the caller is a child since they said 'father'. The AI will suggest confirming the caller's name.)*
 
-**Agent:** "Thank you. I have the policy pulled up for Suresh Menon. For my records, could I please have your full name and relationship to Suresh?"
+**Agent:** "Thank you. I have the policy pulled up for Suresh Menon. For my records to verify against the listed beneficiaries, could I please have your full name?"
 
-**Customer:** "My name is Anand Menon, I am his son."
-*(The AI verifies Anand is listed as a 40% beneficiary. The AI HIPAA compliance rule triggers.)*
+**Customer:** "My name is Anand Menon."
+*(The AI verifies Anand is listed as a 40% beneficiary (Son). The AI HIPAA compliance rule triggers.)*
 
 **Agent:** "Thank you, Anand. Please be advised that all medical and personal information discussed is protected under HIPAA. To start the claim, could you provide the date, location, and cause of your father's passing?"
 

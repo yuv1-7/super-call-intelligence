@@ -167,7 +167,9 @@ def get_member(policy_id: str = None, name: str = None, phone: str = None):
     search_phone = re.sub(r'\D', '', phone) if phone else None
 
     # 2. Iterate through all members to find a match for phone
-    if search_phone:
+    # Require at least 10 digits to avoid false positives from partial numbers
+    # (e.g., speech recognition splitting "8765432109" across two utterances)
+    if search_phone and len(search_phone) >= 10:
         for pid, data in MEMBER_DB.items():
             db_phone = re.sub(r'\D', '', data.get("phone", ""))
             if search_phone in db_phone:
