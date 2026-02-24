@@ -1476,3 +1476,313 @@ body {
     padding: 12px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════
+   MODERN LOGIN PAGE STYLES
+   ═══════════════════════════════════════════════════════ */
+
+.login-container {
+  min-height: 100vh;
+  width: 100vw;
+  background: #0f172a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: auto;
+  /* Allow scrolling if window is small */
+  font-family: var(--font-family);
+  color: #fff;
+}
+
+/* Animated Background Blobs */
+.blob {
+  position: absolute;
+  filter: blur(80px);
+  z-index: 1;
+  border-radius: 50%;
+  animation: float 20s infinite ease-in-out alternate;
+  opacity: 0.6;
+}
+
+.blob-1 {
+  width: 50vw;
+  height: 50vw;
+  max-width: 600px;
+  max-height: 600px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.6) 0%, rgba(99, 102, 241, 0) 70%);
+  top: -100px;
+  left: -100px;
+  animation-delay: 0s;
+}
+
+.blob-2 {
+  width: 60vw;
+  height: 60vw;
+  max-width: 700px;
+  max-height: 700px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.6) 0%, rgba(168, 85, 247, 0) 70%);
+  bottom: -200px;
+  right: -100px;
+  animation-delay: -5s;
+}
+
+.blob-3 {
+  width: 40vw;
+  height: 40vw;
+  max-width: 500px;
+  max-height: 500px;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.5) 0%, rgba(14, 165, 233, 0) 70%);
+  top: 40%;
+  left: 30%;
+  animation-delay: -10s;
+}
+
+@keyframes float {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+.login-content {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  gap: 60px;
+  padding: 40px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.login-branding {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.brand-header {
+  animation: fadeUp 0.8s ease-out;
+}
+
+.login-logo {
+  height: 48px;
+  margin-bottom: 24px;
+}
+
+.login-title {
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: 16px;
+  background: linear-gradient(to right, #fff, #94a3b8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.login-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  background: rgba(99, 102, 241, 0.2);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  border-radius: 20px;
+  color: #c7d2fe;
+  -webkit-text-fill-color: initial;
+}
+
+.login-subtitle {
+  font-size: 1.25rem;
+  color: #94a3b8;
+  max-width: 480px;
+  line-height: 1.6;
+}
+
+.value-props {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  animation: fadeUp 1s ease-out;
+}
+
+.value-prop {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.vp-icon {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 12px;
+  border-radius: 12px;
+  color: #60a5fa;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.vp-text h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #f8fafc;
+}
+
+.vp-text p {
+  font-size: 0.95rem;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+.login-auth-card {
+  flex: 0 0 460px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Removed glass panel entirely */
+
+/* Customizing Clerk Elements */
+.clerk-root-box {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+/* Customizing Clerk Elements */
+.clerk-pro-card {
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  width: 100% !important;
+  min-height: 520px !important;
+  border-radius: 16px !important;
+  padding: 40px 32px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  background: #1e293b !important;
+}
+
+/* Hide Development Mode Badge */
+.cl-internal-1auqigc {
+  display: none !important;
+}
+
+/* Base button and input styles for a cleaner pro look */
+.clerk-social-button {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #fff !important;
+  transition: all 0.2s ease !important;
+  border-radius: 8px !important;
+}
+
+.clerk-social-button:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.clerk-input {
+  background: #0f172a !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+  transition: all 0.2s ease !important;
+  border-radius: 8px !important;
+}
+
+.clerk-input:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15) !important;
+}
+
+.clerk-primary-button {
+  background: #3b82f6 !important;
+  border: none !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+  transition: all 0.2s ease !important;
+  border-radius: 8px !important;
+}
+
+.clerk-primary-button:hover {
+  background: #2563eb !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2) !important;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Responsive Login */
+@media (max-width: 1024px) {
+  .login-content {
+    flex-direction: column;
+    text-align: center;
+    gap: 40px;
+    padding: 20px;
+  }
+
+  .login-title {
+    justify-content: center;
+  }
+
+  .login-subtitle {
+    margin: 0 auto;
+  }
+
+  .value-prop {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .login-auth-card {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 440px;
+  }
+
+  .app-header .header-brand .app-logo {
+    height: 28px;
+  }
+}
