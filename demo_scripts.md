@@ -83,3 +83,40 @@ These scripts are designed to showcase the full power of your application. Read 
 **Customer:** "Understood. We will go do that now. Thank you."
 
 **[⏹ END CALL]**
+
+---
+
+## 🕊️ Scenario 3: Life Insurance Death Claim (Sensitive Flow)
+**Goal:** Show the AI handling a highly sensitive life insurance claim. It should express condolences just once, verify the caller's identity against the beneficiary list, navigate HIPAA requirements, and carefully collect the date and cause of death without asking to speak to the deceased.
+
+**Data Targeted:** Suresh Menon (`LIFE-200001` - Caller is his son, Anand Menon)
+
+**[🎤 START CALL]**
+
+**Agent:** "Thank you for calling Super Insurance claims. This call is being recorded for quality and training purposes. My name is Alex, how may I assist you?"
+
+**Customer:** "Hi Alex... my father passed away recently. I need to start a life insurance claim."
+*(Wait for AI intent to classify as `life_death_claim`. The AI will suggest asking for the policy number.)*
+
+**Agent:** "I am so incredibly sorry for your loss. I can certainly guide you through this process. Do you happen to have his policy number or phone number?"
+
+**Customer:** "Yes, his policy number is L I F E 2 0 0 0 0 1."
+*(Profile loads for Suresh Menon. The AI sees he is the policyholder and sees his beneficiaries. The AI will suggest confirming the caller's identity since they are not the policyholder.)*
+
+**Agent:** "Thank you. I have the policy pulled up for Suresh Menon. For my records, could I please have your full name and relationship to Suresh?"
+
+**Customer:** "My name is Anand Menon, I am his son."
+*(The AI verifies Anand is listed as a 40% beneficiary. The AI HIPAA compliance rule triggers.)*
+
+**Agent:** "Thank you, Anand. Please be advised that all medical and personal information discussed is protected under HIPAA. To start the claim, could you provide the date, location, and cause of your father's passing?"
+
+**Customer:** "He passed away on February 10th at City General Hospital after a severe heart attack."
+*(The AI captures these details. Contestability expired is true, so no contestability warning triggers. The AI suggests closing and next steps based on the KB.)*
+
+**Agent:** "Thank you for sharing that information with me. To proceed, we will need a certified copy of the death certificate, a completed claim form, and a copy of your photo ID. I will email the forms to the address on file now. Is there anything else I can do to assist you today?"
+
+**Customer:** "No, that should be everything for now. Thank you for your help."
+*(AI recognizes the caller needs no further assistance and suggests a definite sign off.)*
+
+**Agent:** "You're very welcome, Anand. We are here if you need anything else during this difficult time. Take care and goodbye."
+**[Agent: End Call]**
