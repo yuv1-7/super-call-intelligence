@@ -4,6 +4,10 @@
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 
+# Accept the Clerk publishable key as a build argument
+ARG VITE_CLERK_PUBLISHABLE_KEY
+ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
+
 # Install dependencies first (optimizes Docker caching)
 COPY frontend/package*.json ./
 RUN npm ci
