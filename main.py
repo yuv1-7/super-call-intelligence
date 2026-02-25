@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 
 from data.members import get_member
 from graph.graph import build_graph
-from tools.llm import generate_post_call_evaluation, generate_agent_suggestion_stream
+from tools.llm import generate_post_call_evaluation, generate_agent_suggestion_stream, extract_claim_facts
 
 load_dotenv()
 
@@ -113,6 +113,7 @@ async def stream_endpoint(websocket: WebSocket):
     call_start_time = time.time()
     detected_intent = None
     detected_member = None
+    accumulated_facts: dict = {}  # Persistent fact state across the entire call
 
     try:
         while True:
@@ -150,6 +151,7 @@ async def stream_endpoint(websocket: WebSocket):
                 call_start_time = time.time()
                 detected_intent = None
                 detected_member = None
+                accumulated_facts = {}
                 
                 continue
 
@@ -296,6 +298,16 @@ async def stream_endpoint(websocket: WebSocket):
                     if parts:
                         member_data_for_llm = f"LOOKUP FAILED: No account found for {' or '.join(parts)}. The caller may have provided incorrect information."
 
+                # Extract structured facts from the full transcript
+                new_facts = await extract_claim_facts(formatted_transcript)
+
+                # Merge into accumulated state — non-null values always win
+                for key, val in new_facts.items():
+                    if val is not None:
+                        accumulated_facts[key] = val
+
+                logger.info(f"📋 Accumulated facts: {accumulated_facts}")
+
                 # Send suggested response as a stream
                 suggestion_stream = generate_agent_suggestion_stream(
                     transcript=text,
@@ -305,6 +317,7 @@ async def stream_endpoint(websocket: WebSocket):
                     member_data=member_data_for_llm,
                     knowledge_docs=result.get("knowledge_docs"),
                     compliance_alerts=result.get("compliance_alerts"),
+                    collected_facts=accumulated_facts,
                 )
                 
                 async for chunk in suggestion_stream:

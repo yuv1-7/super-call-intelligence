@@ -35,6 +35,21 @@ class EntityExtraction(BaseModel):
     phone: str | None
 
 
+class ClaimFacts(BaseModel):
+    """Structured extraction of all claim-relevant facts mentioned in the conversation."""
+    caller_name: str | None
+    relationship_to_policyholder: str | None
+    incident_description: str | None
+    date_of_incident: str | None
+    time_of_incident: str | None
+    location_of_incident: str | None
+    cause_of_death: str | None
+    injuries_reported: str | None
+    vehicle_drivable: bool | None
+    police_report_filed: bool | None
+    other_parties_involved: str | None
+
+
 class ScoreDetail(BaseModel):
     score: int
     feedback: str
@@ -114,6 +129,35 @@ Return null for fields not found."""
 
 
 # ═══════════════════════════════════════════════════════
+# CLAIM FACTS EXTRACTION — Structured Output
+# ═══════════════════════════════════════════════════════
+
+async def extract_claim_facts(full_transcript: str) -> dict:
+    """Extract all claim-relevant facts already mentioned in the conversation.
+    This runs on the FULL transcript so the suggestion LLM gets an explicit
+    list of what's known vs what's still missing."""
+
+    system_prompt = """You are a fact extraction system for insurance calls.
+Analyze the ENTIRE conversation transcript and extract every claim-relevant fact that has been mentioned by either the customer or the agent.
+Return null for any field that has NOT been mentioned or discussed at all.
+Be generous in extraction — if someone says "at City General Hospital", that IS the location. If they say "heart attack", that IS the cause of death. If they say "February 10th", that IS the date.
+Do NOT leave a field null if the information was mentioned even casually or indirectly."""
+
+    response = await client.beta.chat.completions.parse(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": full_transcript or "No transcript yet"},
+        ],
+        temperature=0.0,
+        max_tokens=300,
+        response_format=ClaimFacts,
+    )
+
+    return response.choices[0].message.parsed.model_dump()
+
+
+# ═══════════════════════════════════════════════════════
 # AGENT SUGGESTION — Separated Prompts by Policy Type
 # ═══════════════════════════════════════════════════════
 
@@ -178,6 +222,34 @@ Life Insurance Death Claim Specific Rules:
 """
 
 
+def _format_collected_facts(facts: dict | None) -> str:
+    """Format collected facts into a clear known/unknown checklist for the LLM."""
+    if not facts:
+        return "No facts extracted yet."
+    known = []
+    unknown = []
+    labels = {
+        "caller_name": "Caller's Name",
+        "relationship_to_policyholder": "Relationship to Policyholder",
+        "incident_description": "What Happened",
+        "date_of_incident": "Date",
+        "time_of_incident": "Time",
+        "location_of_incident": "Location",
+        "cause_of_death": "Cause of Death",
+        "injuries_reported": "Injuries",
+        "vehicle_drivable": "Vehicle Drivable",
+        "police_report_filed": "Police Report Filed",
+        "other_parties_involved": "Other Parties",
+    }
+    for key, label in labels.items():
+        val = facts.get(key)
+        if val is not None:
+            known.append(f"  ✅ {label}: {val}")
+        else:
+            unknown.append(f"  ❓ {label}: NOT YET PROVIDED")
+    return "ALREADY COLLECTED (do NOT ask again):\n" + "\n".join(known) + "\n\nSTILL MISSING (ask for these if relevant):\n" + "\n".join(unknown)
+
+
 def _build_user_prompt(
     transcript: str,
     full_transcript: str,
@@ -185,6 +257,7 @@ def _build_user_prompt(
     member_data: dict | None,
     knowledge_docs: list[dict] | None,
     compliance_alerts: list[dict] | None,
+    collected_facts: dict | None = None,
 ) -> str:
     """Build the user prompt for the agent suggestion functions."""
     return f"""Recent Caller's Statement:
@@ -197,6 +270,11 @@ Detected Intent: {intent or 'unknown'}
 
 Policyholder Data:
 {member_data or 'Not yet identified'}
+
+══════ INFORMATION TRACKER ══════
+{_format_collected_facts(collected_facts)}
+══════════════════════════════════
+CRITICAL: Items marked ✅ above have ALREADY been provided. You are FORBIDDEN from asking about them. Only ask about ❓ items if they are relevant to this claim type.
 
 Relevant Policy Articles:
 {_format_docs(knowledge_docs)}
@@ -222,12 +300,13 @@ async def generate_agent_suggestion(
     member_data: dict | None,
     knowledge_docs: list[dict] | None,
     compliance_alerts: list[dict] | None,
+    collected_facts: dict | None = None,
 ) -> str:
     """Generate a contextual suggested response for the call center agent."""
 
     system_prompt = _select_prompt(claim_type)
     user_prompt = _build_user_prompt(
-        transcript, full_transcript, intent, member_data, knowledge_docs, compliance_alerts
+        transcript, full_transcript, intent, member_data, knowledge_docs, compliance_alerts, collected_facts
     )
 
     response = await client.chat.completions.create(
@@ -251,12 +330,13 @@ async def generate_agent_suggestion_stream(
     member_data: dict | None,
     knowledge_docs: list[dict] | None,
     compliance_alerts: list[dict] | None,
+    collected_facts: dict | None = None,
 ):
     """Generate a contextual suggested response for the call center agent, streaming chunks."""
 
     system_prompt = _select_prompt(claim_type)
     user_prompt = _build_user_prompt(
-        transcript, full_transcript, intent, member_data, knowledge_docs, compliance_alerts
+        transcript, full_transcript, intent, member_data, knowledge_docs, compliance_alerts, collected_facts
     )
 
     response = await client.chat.completions.create(
