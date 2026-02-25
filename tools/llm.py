@@ -10,7 +10,8 @@ load_dotenv()
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-MODEL = "gpt-4.1-mini"
+MODEL = "gpt-4.1-mini"          # For suggestion generation (needs quality)
+FAST_MODEL = "gpt-4.1-nano"     # For utility calls: intent, entity, fact extraction (needs speed)
 
 
 # ═══════════════════════════════════════════════════════
@@ -38,6 +39,7 @@ class EntityExtraction(BaseModel):
 class ClaimFacts(BaseModel):
     """Structured extraction of all claim-relevant facts mentioned in the conversation."""
     caller_name: str | None
+    policy_number: str | None
     relationship_to_policyholder: str | None
     incident_description: str | None
     date_of_incident: str | None
@@ -87,7 +89,7 @@ Analyze the caller's statement and classify it.
 - "claim_type": the broad insurance line the intent falls under."""
 
     response = await client.beta.chat.completions.parse(
-        model=MODEL,
+        model=FAST_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": transcript},
@@ -115,7 +117,7 @@ Analyze the caller's statement and extract the following if present:
 Return null for fields not found."""
 
     response = await client.beta.chat.completions.parse(
-        model=MODEL,
+        model=FAST_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": transcript},
@@ -141,10 +143,20 @@ async def extract_claim_facts(full_transcript: str) -> dict:
 Analyze the ENTIRE conversation transcript and extract every claim-relevant fact that has been mentioned by either the customer or the agent.
 Return null for any field that has NOT been mentioned or discussed at all.
 Be generous in extraction — if someone says "at City General Hospital", that IS the location. If they say "heart attack", that IS the cause of death. If they say "February 10th", that IS the date.
-Do NOT leave a field null if the information was mentioned even casually or indirectly."""
+Do NOT leave a field null if the information was mentioned even casually or indirectly.
+
+CRITICAL — caller_name rules:
+- The caller_name is the CUSTOMER's own name — the person calling in.
+- When the customer says "Hi George" or "Hello Josh", they are ADDRESSING THE AGENT by the agent's name. This is NOT the caller's name. Do NOT extract the agent's name as the caller_name.
+- Only extract caller_name if the customer explicitly introduces themselves, e.g. "My name is Sarah" or "This is Ravi calling".
+- If the customer has not stated their own name, return null for caller_name.
+
+CRITICAL — policy_number rules:
+- Extract the policy number ONLY if the customer explicitly states it (e.g. "my policy number is CAR-12345").
+- Return null if no policy number has been mentioned."""
 
     response = await client.beta.chat.completions.parse(
-        model=MODEL,
+        model=FAST_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": full_transcript or "No transcript yet"},
@@ -168,20 +180,32 @@ Generate a professional, empathetic, and compliance-aware suggested response for
 
 Core Rules:
 - NEVER address the customer directly. You are writing a script/talking points FOR the agent to read verbatim.
+- **Call Recording Disclaimer**: The call recording disclaimer ("this call is being recorded") is ONLY mentioned by the AGENT at the very START of the call. If the agent has already said it (check Full Conversation Context), NEVER bring it up again later in the conversation. Make sure it is said once.
 - **Act as a helpful guide, not a strict interrogator**: Do not aggressively demand information if the user is distressed or if the details aren't immediately necessary.
 - **Handling Acknowledgements**: When a user responds with "No issues", "No problem", "Sure", or "Okay" immediately after the agent provides a disclaimer, disclosure, or statement (like call recording), treat this strictly as a conversational acknowledgement. DO NOT interpret this as the user saying they have no insurance claim, no damage, or that the call is over. Follow up with the next relevant question for the claim.
 - **Policy Lookup Priority**: ONLY if the Policyholder Data is "Not yet identified", ask for the policy number first to look up their account. If they cannot provide it, ask for their phone number as an alternative. You CANNOT search by name alone.
 - **Account Verification Complete**: CRITICAL RULE: ALWAYS look at the "Policyholder Data" section. If it shows ANY member details (name, policy type, etc.), YOU ALREADY HAVE THEIR ACCOUNT AND POLICY OPEN. You are permanently forbidden from asking for their policy number, phone number, or name. NEVER ask for details to "look up their account", "verify their policy", or "so I can assist you" because IT IS ALREADY VERIFIED.
 - **Lookup Failed**: If the Policyholder Data says "LOOKUP FAILED", the caller provided a policy number or phone number that did not match any account in our system. Politely inform them that you were unable to locate an account with the information provided and ask them to double-check the number. Offer alternatives (e.g., "Could you try your phone number instead?" or "Do you have the policy number handy?"). Do NOT just silently re-ask for the same info without acknowledging the failure.
-- **Role of Knowledge Docs**: The "Relevant Policy Articles" are internal company reference documents written for human agents. Use them to extract factual procedures, timelines, coverage rules, and document checklists. DO NOT follow them as step-by-step scripts — interpret them intelligently based on the conversation context. If information has already been gathered, skip that step. If the Policyholder Data is already populated, do NOT re-ask for policy numbers or identity.
-- **Efficient Call Wrap-Up**: Once the core details of the issue are gathered, immediately move to wrap up the call, provide next steps, and ask if there is anything else you can assist with.
-- **Ending the Call**: CRITICAL RULE: If the customer responds that they need no further assistance (e.g., "no", "that's it", "nothing else"), you MUST explicitly close the dialogue. Generate a definitive sign-off script (e.g., "Thank you for calling Super Insurance. Have a great day. Goodbye.") and add a bracketed note at the end: `[Agent: End Call]`.
+- **Role of Knowledge Docs**: The "Relevant Policy Articles" are your primary reference for facts and procedures. You MUST ensure all key points from these articles are communicated to the caller by the end of the call, SPREAD across multiple responses — ONE new topic per response. Skip steps that are already covered or irrelevant. Specifically, always look for and communicate:
+  * **Timelines** — any processing durations or response windows mentioned
+  * **Required documents** — anything the caller needs to submit
+  * **Payout or settlement info** — any options or amounts mentioned
+  * **Coverage specifics** — what is or isn't covered
+  * **Next steps** — what happens after this call
+  IMPORTANT: Only reference information that actually appears in the provided articles. Do NOT invent procedures or timelines from other claim types.
+- **CRITICAL — No Hallucinated Facts**: NEVER invent or fabricate specific numbers, timelines, amounts, procedures, or roles that are NOT explicitly written in the "Relevant Policy Articles" provided to you. Specifically:
+  * Do NOT mention "claims adjuster" or "adjuster" unless the articles explicitly use that term.
+  * Do NOT say "24-48 hours" unless the articles explicitly say "24-48 hours".
+  * Quote ONLY what the articles actually say — exact timelines, exact documents, exact options.
+  * If a concept or role does not appear in the provided articles, you MUST NOT mention it.
+- **Call Wrap-Up**: Try to cover all key Knowledge Doc points (required documents, timelines, next steps) BEFORE asking "Is there anything else?". But once you've asked and the customer is done, END the call — do NOT continue with more info.
+- **Ending the Call**: HIGHEST PRIORITY RULE — overrides everything else. If the customer says they need nothing else (e.g., "no", "that's all", "thank you", "nothing else", "I'm good"), you MUST immediately generate a SHORT, definitive goodbye (1 sentence max) and add `[Agent: End Call]`. Do NOT ask another follow-up question, do NOT provide more information, do NOT say "Is there anything else". Just say goodbye.
 - **Empathy**: Be warm and empathetic ONE TIME when the user first reports an incident or loss. CRITICAL: DO NOT repeatedly say "I'm sorry" or apologize multiple times throughout the conversation.
 - **Name Usage**: Use the caller's name ONCE at the start to greet them or confirm identity. After that, DO NOT keep repeating their name in every response — it sounds robotic and unnatural. Speak like a normal human would.
 - **Conversational Context**: When the agent has just asked a question and the customer responds, ALWAYS interpret the customer's reply as an answer to that question — even if the phrasing is awkward, fragmented, or sounds like a question itself (this is common in phone conversations and speech-to-text). Do NOT re-interpret their answer as a new question or topic. For example, if the agent asks "Where did it happen?" and the customer says "What happened was in the parking lot of Max Mall", the location IS "parking lot of Max Mall" — acknowledge it and move on.
 - **Reasonable Detail Level**: Accept reasonable answers without over-drilling for unnecessary precision. A location like "parking lot of Max Mall" or "MG Road intersection" is specific enough for an FNOL. Do NOT push for exact coordinates, lane numbers, or floor levels unless the caller volunteers that detail.
-- Reference compliance requirements naturally (don't read out compliance codes).
-- CRITICAL: Keep responses to 1-2 SHORT sentences MAX. Think about what a real human agent would say on a phone call — they would NOT read a paragraph. Each response should address ONE thing: either ask ONE question or provide ONE piece of information.
+- **Compliance Alerts Are Mandatory**: The "Active Compliance Alerts" are NOT optional suggestions — they are rules you MUST follow. If a CRITICAL or HIGH severity alert is active, you MUST work it into the conversation naturally at the earliest appropriate moment. For example, if HIPAA is listed, you must inform the caller that their information is protected before collecting sensitive details. Do NOT read out compliance codes or rule IDs — weave the substance naturally.
+- CRITICAL: Keep responses to 1-2 sentences MAX. Each response should cover ONE topic: either ask ONE question, OR provide ONE piece of procedural information. Think about what a real agent says on a phone call — short, clear, one thing at a time.
 - CRITICAL: NEVER ask multiple questions in a single response. ONE question at a time.
 - **No Repetition**: Check the "Full Conversation Context" carefully. If the AGENT already told the caller something (e.g., towing coverage, rental car offer, condolences), DO NOT repeat it in subsequent responses. Each response should only contain NEW, previously unsaid information or questions.
 - **CRITICAL — No Redundant Questions**: Before generating ANY question, you MUST carefully re-read the ENTIRE "Full Conversation Context" line by line. If the customer has ALREADY provided a piece of information — such as what happened, the date, location, cause of death, names, policy number, description of the incident, or any other detail — at ANY point earlier in the conversation, you are PERMANENTLY FORBIDDEN from asking for it again. Acknowledge the information they gave and move on to the NEXT piece of missing information. This rule overrides any checklist or procedure.
@@ -208,40 +232,74 @@ Car Insurance Specific Rules:
 
 # ─── LIFE INSURANCE SPECIFIC RULES ─── #
 _LIFE_RULES = _SHARED_RULES + """
-Life Insurance Death Claim Specific Rules:
-- **Caller is NOT the Policyholder**: The policyholder is DECEASED. The caller is a family member or beneficiary. NEVER greet the caller by the policyholder's name. NEVER say "your passing" to the caller — use "your father's passing", "their passing", or refer to the deceased by name.
-- **Condolences**: Express sincere condolences ONCE at the start. DO NOT BE OVERLY APOLOGETIC. Do not keep repeating "I'm sorry" throughout the conversation.
-- **Caller Identity**: Ask for the caller's FULL NAME so you can verify them against the 'beneficiaries' list in the Policyholder Data. Do NOT ask for their name to "locate the policy" — you locate the policy by policy number or phone number ONLY.
-- **Relationship Verification**: CRITICAL: Check the "Full Conversation Context". If the caller said "my father", "my husband", "my wife", "my mother", etc. at ANY point during the call, YOU ALREADY KNOW THE RELATIONSHIP. NEVER ask "what is your relationship to the deceased?" if they have already told you. Deduce it: "my father" = son/daughter, "my husband" = spouse, etc.
-- **Fact Deduction**: CRITICAL: Check the "Full Conversation Context". If the caller already provided the date, location, or cause of death — even informally (e.g., "heart attack", "February 10th", "at City General Hospital", "at home", "in the hospital") — YOU ALREADY KNOW IT. A hospital name IS a location. A disease or event IS a cause. A month and day IS a date. NEVER re-ask for these details. Only ask for details that are completely ABSENT from the conversation.
-- **Mandatory Death Claim Information**: Before you can move to wrap up, you MUST ensure you have collected: Date of death, Location of death, and Cause of death. A hospital name, city, or general area (e.g., "City General Hospital") is a SUFFICIENT location — do NOT ask for more specifics. If any of these three are genuinely missing (never mentioned at all), gently ask for them (one at a time).
-- **Documentation Guidance**: Once you have all the facts (date, location, cause), you MUST clearly list the required documents: certified death certificate, completed claim form, and photo ID of the beneficiary. Explicitly tell the caller that the claim form will be mailed or emailed to the address on file.
-- **Beneficiary Verification**: Once the caller provides their name, check the 'beneficiaries' section of the Policyholder Data. If they are listed, confirm they are a recognized beneficiary. If not listed, inform them sensitively that they may need to provide additional documentation.
-- **Contestability**: If the Policyholder Data shows `contestabilityExpired: false`, gently advise that additional review may be required as the policy is within the 2-year contestability period.
-- **HIPAA**: Reference that all medical and personal information is protected under HIPAA when appropriate, but do so naturally (don't read out compliance codes).
+Life Insurance Death Claim Rules:
+
+CONTEXT:
+- The policyholder is DECEASED. The caller is a family member or beneficiary.
+- NEVER greet the caller by the policyholder's name. NEVER say "your passing" — say "your father's passing", "their passing", etc.
+- Deduce relationship from what the caller says: "my father" = son/daughter, "my husband" = spouse. Do NOT ask for relationship if they already told you.
+
+RULES:
+- **Condolences**: Express sincere condolences ONCE, early on. Do not repeat apologies later.
+- **Policy Lookup**: Locate the policy by policy number or phone number. Do NOT ask for their name to locate the policy.
+- **Caller Verification**: Ask for the caller's full name, then check the 'beneficiaries' section in Policyholder Data. If they are listed, confirm they are a recognized beneficiary.
+- **HIPAA Notice**: Inform the caller that all medical and personal information discussed is protected under HIPAA. Do this naturally, not as a legal disclaimer.
+- **Fact Collection**: You need Date of death, Location of death, and Cause of death. ONLY ask for what is genuinely missing. A hospital name IS a location. A disease IS a cause. A month and day IS a date. If the caller provided all three already, do NOT re-ask.
+- **Required Documents**: Inform the caller what documents they will need to gather and mail back: a certified death certificate and a government-issued photo ID. Tell them that the claim form will be mailed or emailed to the address on file, and they should complete and return it along with the other documents. Do NOT ask them to provide documents on the phone — this is just informing them of next steps.
+- **Processing Timeline**: You MUST tell the caller that claims are typically processed within 30-60 days after all documents are received.
+- **Payout Options**: You MUST tell the caller the available payout options: lump sum, installments, or annuity.
+- **Contestability**: If the Policyholder Data shows contestability has NOT expired, mention that additional review may be required as the policy is within the 2-year contestability period.
+- **Closing**: Once all the above have been covered, ask if there's anything else. When they say no, give a short goodbye + [Agent: End Call].
 """
 
 
-def _format_collected_facts(facts: dict | None) -> str:
-    """Format collected facts into a clear known/unknown checklist for the LLM."""
+def _format_collected_facts(facts: dict | None, claim_type: str | None = None) -> str:
+    """Format collected facts into a clear known/unknown checklist for the LLM.
+    Only shows fields relevant to the detected claim_type."""
     if not facts:
         return "No facts extracted yet."
-    known = []
-    unknown = []
-    labels = {
+
+    # ─── Define which fields matter per claim type ─── #
+    _CAR_FIELDS = [
+        "caller_name", "policy_number", "incident_description",
+        "date_of_incident", "time_of_incident", "location_of_incident",
+        "injuries_reported", "vehicle_drivable", "police_report_filed",
+        "other_parties_involved",
+    ]
+    _LIFE_FIELDS = [
+        "caller_name", "policy_number", "relationship_to_policyholder",
+        "date_of_incident", "location_of_incident", "cause_of_death",
+    ]
+    _GENERAL_FIELDS = [
+        "caller_name", "policy_number", "incident_description",
+    ]
+
+    if claim_type == "life_insurance":
+        active_fields = _LIFE_FIELDS
+    elif claim_type == "car_insurance":
+        active_fields = _CAR_FIELDS
+    else:
+        active_fields = _GENERAL_FIELDS
+
+    all_labels = {
         "caller_name": "Caller's Name",
+        "policy_number": "Policy Number",
         "relationship_to_policyholder": "Relationship to Policyholder",
         "incident_description": "What Happened",
-        "date_of_incident": "Date",
+        "date_of_incident": "Date" if claim_type != "life_insurance" else "Date of Death",
         "time_of_incident": "Time",
-        "location_of_incident": "Location",
+        "location_of_incident": "Location" if claim_type != "life_insurance" else "Location of Death",
         "cause_of_death": "Cause of Death",
         "injuries_reported": "Injuries",
         "vehicle_drivable": "Vehicle Drivable",
         "police_report_filed": "Police Report Filed",
         "other_parties_involved": "Other Parties",
     }
-    for key, label in labels.items():
+
+    known = []
+    unknown = []
+    for key in active_fields:
+        label = all_labels[key]
         val = facts.get(key)
         if val is not None:
             known.append(f"  ✅ {label}: {val}")
@@ -258,6 +316,7 @@ def _build_user_prompt(
     knowledge_docs: list[dict] | None,
     compliance_alerts: list[dict] | None,
     collected_facts: dict | None = None,
+    claim_type: str | None = None,
 ) -> str:
     """Build the user prompt for the agent suggestion functions."""
     return f"""Recent Caller's Statement:
@@ -272,7 +331,7 @@ Policyholder Data:
 {member_data or 'Not yet identified'}
 
 ══════ INFORMATION TRACKER ══════
-{_format_collected_facts(collected_facts)}
+{_format_collected_facts(collected_facts, claim_type)}
 ══════════════════════════════════
 CRITICAL: Items marked ✅ above have ALREADY been provided. You are FORBIDDEN from asking about them. Only ask about ❓ items if they are relevant to this claim type.
 
@@ -306,7 +365,7 @@ async def generate_agent_suggestion(
 
     system_prompt = _select_prompt(claim_type)
     user_prompt = _build_user_prompt(
-        transcript, full_transcript, intent, member_data, knowledge_docs, compliance_alerts, collected_facts
+        transcript, full_transcript, intent, member_data, knowledge_docs, compliance_alerts, collected_facts, claim_type
     )
 
     response = await client.chat.completions.create(
@@ -336,7 +395,7 @@ async def generate_agent_suggestion_stream(
 
     system_prompt = _select_prompt(claim_type)
     user_prompt = _build_user_prompt(
-        transcript, full_transcript, intent, member_data, knowledge_docs, compliance_alerts, collected_facts
+        transcript, full_transcript, intent, member_data, knowledge_docs, compliance_alerts, collected_facts, claim_type
     )
 
     response = await client.chat.completions.create(
@@ -422,7 +481,7 @@ Evaluate this agent's performance:"""
 def _format_docs(docs: list[dict] | None) -> str:
     if not docs:
         return "None found"
-    return "\n".join(f"- {d['title']}: {d['content'][:200]}..." for d in docs)
+    return "\n\n".join(f"--- {d['title']} ---\n{d['content']}" for d in docs)
 
 
 def _format_alerts(alerts: list[dict] | None) -> str:

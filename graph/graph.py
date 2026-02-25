@@ -16,9 +16,9 @@ def build_graph():
     Build the LangGraph processing pipeline.
 
     Flow (Parallel):
-        START ──┬──> intent ──────> compliance ──> END
-                ├──> entity ──────> member ──────> END
-                └──> knowledge ──────────────────> END
+        START ──┬──> intent ──┬──> compliance ──> END
+                │             └──> knowledge ───> END
+                └──> entity ──────> member ─────> END
     """
     builder = StateGraph(AgentState)
 
@@ -32,9 +32,9 @@ def build_graph():
     # Branch out concurrently from START
     builder.add_edge(START, "intent")
     builder.add_edge(START, "entity")
-    builder.add_edge(START, "knowledge")
 
     # Sequential dependencies
+    builder.add_edge("intent", "knowledge")     # knowledge needs claim_type from intent
     builder.add_edge("intent", "compliance")
     builder.add_edge("entity", "member")
 

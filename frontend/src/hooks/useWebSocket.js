@@ -163,6 +163,10 @@ export function useWebSocket(url) {
         setIntent(null);
         setIsProcessing(false);
         setPostCallEvaluation(null);
+        // Also reset backend state
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'new_call' }));
+        }
     }, []);
 
     useEffect(() => {

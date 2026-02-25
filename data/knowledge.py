@@ -13,16 +13,22 @@ with open(os.path.join(_DATA_DIR, "compliance_rules.json"), "r", encoding="utf-8
     COMPLIANCE_RULES: list[dict] = json.load(f)
 
 
-def search_knowledge(query: str, top_k: int = 3) -> list[dict]:
+def search_knowledge(query: str, category: str | None = None, top_k: int = 2) -> list[dict]:
     """
     Simple keyword-match search over the knowledge base.
     Scores each doc by how many of its tags appear in the query.
+    Filters by category (e.g. 'car_insurance', 'life_insurance') when provided.
     Returns the top-k results sorted by relevance.
     """
     query_lower = query.lower()
     scored: list[tuple[int, dict]] = []
 
     for doc in KNOWLEDGE_BASE:
+        # Filter by category if provided — skip docs from wrong category
+        doc_cat = doc.get("category", "")
+        if category and doc_cat != "general" and doc_cat != category:
+            continue
+
         score = sum(1 for tag in doc["tags"] if tag in query_lower)
         if score > 0:
             scored.append((score, doc))

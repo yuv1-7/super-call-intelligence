@@ -4,6 +4,7 @@ import re
 import json
 import logging
 import time
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -156,6 +157,18 @@ async def stream_endpoint(websocket: WebSocket):
                 continue
 
             # ═══════════════════════════════════════════
+            # 🔄 NEW CALL — Reset all state for a fresh call
+            # ═══════════════════════════════════════════
+            if msg_type == "new_call":
+                logger.info("🔄 New call — resetting all backend state")
+                call_transcript = []
+                call_start_time = time.time()
+                detected_intent = None
+                detected_member = None
+                accumulated_facts = {}
+                continue
+
+            # ═══════════════════════════════════════════
             # 🎙️ TRANSCRIPT MESSAGE — Process normally
             # ═══════════════════════════════════════════
             text: str = data.get("text", "")
@@ -244,7 +257,28 @@ async def stream_endpoint(websocket: WebSocket):
                     "suggestion": None,
                 }
 
-                result = await graph.ainvoke(state)
+                # Check if we need fact extraction — skip if key facts are already filled
+                key_facts_filled = sum(
+                    1 for k in ["date_of_incident", "location_of_incident", "incident_description", "cause_of_death", "caller_name"]
+                    if accumulated_facts.get(k)
+                )
+
+                if key_facts_filled >= 4:
+                    # Enough facts accumulated — skip the extra LLM call for speed
+                    result = await graph.ainvoke(state)
+                    logger.info("⚡ Skipped fact extraction (sufficient facts already)")
+                else:
+                    # Run LangGraph pipeline AND fact extraction in parallel
+                    result, new_facts = await asyncio.gather(
+                        graph.ainvoke(state),
+                        extract_claim_facts(formatted_transcript),
+                    )
+                    # Merge new facts into accumulated state — non-null values always win
+                    for key, val in new_facts.items():
+                        if val is not None:
+                            accumulated_facts[key] = val
+
+                logger.info(f"📋 Accumulated facts: {accumulated_facts}")
 
                 # Track detected intent
                 if result.get("intent"):
@@ -265,11 +299,18 @@ async def stream_endpoint(websocket: WebSocket):
                         "data": result["member_data"],
                     })
 
-                # Send knowledge articles
-                if result.get("knowledge_docs"):
+                # Send knowledge articles — filter by detected claim type
+                knowledge_docs = result.get("knowledge_docs") or []
+                claim_type = result.get("claim_type", "")
+                if claim_type and knowledge_docs:
+                    knowledge_docs = [
+                        doc for doc in knowledge_docs
+                        if doc.get("category", "") == "general" or doc.get("category", "") == claim_type
+                    ]
+                if knowledge_docs:
                     await websocket.send_json({
                         "type": "knowledge",
-                        "data": result["knowledge_docs"],
+                        "data": knowledge_docs,
                     })
 
                 # Send compliance alerts
@@ -298,24 +339,14 @@ async def stream_endpoint(websocket: WebSocket):
                     if parts:
                         member_data_for_llm = f"LOOKUP FAILED: No account found for {' or '.join(parts)}. The caller may have provided incorrect information."
 
-                # Extract structured facts from the full transcript
-                new_facts = await extract_claim_facts(formatted_transcript)
-
-                # Merge into accumulated state — non-null values always win
-                for key, val in new_facts.items():
-                    if val is not None:
-                        accumulated_facts[key] = val
-
-                logger.info(f"📋 Accumulated facts: {accumulated_facts}")
-
-                # Send suggested response as a stream
+                logger.info(f"📚 Knowledge docs passed to LLM: {[d.get('docId', 'unknown') for d in knowledge_docs]}")
                 suggestion_stream = generate_agent_suggestion_stream(
                     transcript=text,
                     full_transcript=formatted_transcript,
                     intent=result.get("intent"),
                     claim_type=result.get("claim_type"),
                     member_data=member_data_for_llm,
-                    knowledge_docs=result.get("knowledge_docs"),
+                    knowledge_docs=knowledge_docs,
                     compliance_alerts=result.get("compliance_alerts"),
                     collected_facts=accumulated_facts,
                 )

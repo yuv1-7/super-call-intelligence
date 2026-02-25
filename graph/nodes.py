@@ -61,9 +61,12 @@ async def member_node(state: dict) -> dict:
 
 async def knowledge_node(state: dict) -> dict:
     """
-    Retrieve relevant knowledge articles based on the transcript.
+    Retrieve relevant knowledge articles based on the full transcript and claim type.
     """
-    docs = search_knowledge(state["transcript"])
+    # Use full transcript for better keyword matching, fall back to current utterance
+    query = state.get("full_transcript") or state["transcript"]
+    category = state.get("claim_type")
+    docs = search_knowledge(query, category=category)
     return {"knowledge_docs": docs}
 
 
