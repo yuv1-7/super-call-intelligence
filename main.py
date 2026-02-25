@@ -141,6 +141,13 @@ async def stream_endpoint(websocket: WebSocket):
                     member_data=detected_member,
                 )
 
+                # Attach FNOL form data for the frontend
+                evaluation["fnol_data"] = {
+                    "facts": accumulated_facts,
+                    "member": detected_member,
+                    "intent": detected_intent,
+                }
+
                 await websocket.send_json({
                     "type": "post_call_evaluation",
                     "data": evaluation,

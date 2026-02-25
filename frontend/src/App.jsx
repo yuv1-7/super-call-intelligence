@@ -8,6 +8,7 @@ import KnowledgeCard from './components/KnowledgeCard.jsx';
 import ComplianceCard from './components/ComplianceCard.jsx';
 import SuggestionCard from './components/SuggestionCard.jsx';
 import PostCallCard from './components/PostCallCard.jsx';
+import FNOLFormCard from './components/FNOLFormCard.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 
 // Determine WebSocket URL
@@ -22,6 +23,7 @@ const WS_URL = import.meta.env.DEV
 export default function App() {
     const [callActive, setCallActive] = useState(false);
     const [showEvaluation, setShowEvaluation] = useState(false);
+    const [postCallTab, setPostCallTab] = useState(0); // 0 = Analytics, 1 = FNOL Form
 
     const {
         isConnected,
@@ -71,6 +73,7 @@ export default function App() {
         resetState();
         setCallActive(false);
         setShowEvaluation(false);
+        setPostCallTab(0);
     };
 
     // Connection status
@@ -149,7 +152,26 @@ export default function App() {
 
                     {/* ─── Right: Cards Grid or Post-Call Evaluation ─── */}
                     {showEvaluation && postCallEvaluation ? (
-                        <PostCallCard evaluation={postCallEvaluation} />
+                        <div className="post-call-overlay">
+                            <div className="post-call-tabs">
+                                <button
+                                    className={`post-call-tab${postCallTab === 0 ? ' active' : ''}`}
+                                    onClick={() => setPostCallTab(0)}
+                                >
+                                    📊 Call Analytics
+                                </button>
+                                <button
+                                    className={`post-call-tab${postCallTab === 1 ? ' active' : ''}`}
+                                    onClick={() => setPostCallTab(1)}
+                                >
+                                    📋 FNOL Report
+                                </button>
+                            </div>
+                            <div className="post-call-tab-content">
+                                {postCallTab === 0 && <PostCallCard evaluation={postCallEvaluation} />}
+                                {postCallTab === 1 && <FNOLFormCard fnolData={postCallEvaluation.fnol_data} />}
+                            </div>
+                        </div>
                     ) : (
                         <main className="cards-area">
                             <SuggestionCard suggestion={suggestion} isProcessing={isProcessing} />
