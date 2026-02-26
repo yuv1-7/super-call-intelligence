@@ -151,6 +151,18 @@ Return null for any field that has NOT been mentioned or discussed at all.
 Be generous in extraction — if someone says "at City General Hospital", that IS the location. If they say "heart attack", that IS the cause of death. If they say "February 10th", that IS the date.
 Do NOT leave a field null if the information was mentioned even casually or indirectly.
 
+CRITICAL — Data Quality & Normalization:
+- The transcript comes from speech-to-text and may contain spelling errors, phonetic misspellings, or garbled text.
+- You MUST normalize and clean all extracted values:
+  * Fix obvious spelling mistakes (e.g., "Feburary" → "February", "hosptial" → "Hospital")
+  * Capitalize proper nouns correctly (names, cities, hospitals, roads, etc.)
+  * Standardize location names (e.g., "mg road" → "MG Road", "city general" → "City General Hospital")
+  * Clean up caller names (e.g., "my name is priya" → caller_name: "Priya", "i'm ravi kumar" → "Ravi Kumar")
+  * For incident descriptions, write a clean, concise summary in proper English, not verbatim speech-to-text. E.g., "yeah so like this guy he just backed into my car in the parking" → "Another vehicle backed into the caller's car in a parking lot."
+  * For injuries, write clearly: "yeah my neck hurts a bit" → "Minor neck pain reported"
+  * For police report numbers, extract the exact alphanumeric code and format it cleanly (e.g., "F I R 2026 M H 4521" → "FIR-2026-MH-4521")
+- Output all values as clean, professional text suitable for an official insurance form.
+
 CRITICAL — date_of_incident and time_of_incident rules:
 - The current date and time is: {current_datetime_str}
 - If the caller uses RELATIVE time references like "happened an hour ago", "just happened", "yesterday", "two days ago", "last night", "this morning", etc., you MUST extrapolate the actual date and time based on the current date/time above.
@@ -167,13 +179,17 @@ CRITICAL — caller_name rules:
 
 CRITICAL — policy_number rules:
 - Extract the policy number ONLY if the customer explicitly states it (e.g. "my policy number is CAR-12345").
+- Format it in standard form: uppercase prefix, hyphen, digits (e.g., "car 12345" → "CAR-12345", "life 200001" → "LIFE-200001").
 - Return null if no policy number has been mentioned.
 
-CRITICAL — police_report_number rules:
+CRITICAL — police_report_filed and police_report_number rules:
+- If the caller explicitly says they DID file a police report, set police_report_filed to true.
+- If the caller explicitly says they did NOT file a police report ("no", "not yet", "haven't filed one"), set police_report_filed to false.
+- If police reporting was never discussed, set police_report_filed to null.
 - If the caller mentions a police report number, FIR number, or complaint number, extract it.
 - e.g. "the police report number is FIR-2026-4521" → police_report_number = "FIR-2026-4521"
 - If they say a police report was filed but did NOT provide the number, set police_report_filed to true and police_report_number to null.
-- Return null if no police report number was mentioned."""
+- Return null for police_report_number if no number was mentioned."""
 
     response = await client.beta.chat.completions.parse(
         model=FAST_MODEL,
@@ -182,7 +198,7 @@ CRITICAL — police_report_number rules:
             {"role": "user", "content": full_transcript or "No transcript yet"},
         ],
         temperature=0.0,
-        max_tokens=400,
+        max_tokens=500,
         response_format=ClaimFacts,
     )
 
@@ -219,9 +235,9 @@ Core Rules:
   * Quote ONLY what the articles actually say — exact timelines, exact documents, exact options.
   * If a concept or role does not appear in the provided articles, you MUST NOT mention it.
 - **Call Wrap-Up**: Try to cover all key Knowledge Doc points (required documents, timelines, next steps) BEFORE asking "Is there anything else?". But once you've asked and the customer is done, END the call — do NOT continue with more info.
-- **Ending the Call**: HIGHEST PRIORITY RULE — overrides everything else. If the customer says they need nothing else (e.g., "no", "that's all", "thank you", "nothing else", "I'm good"), you MUST immediately generate a SHORT, definitive goodbye (1 sentence max) and add `[Agent: End Call]`. Do NOT ask another follow-up question, do NOT provide more information, do NOT say "Is there anything else". Just say goodbye.
+- **Ending the Call**: HIGHEST PRIORITY RULE — overrides everything else. If the customer says they need nothing else (e.g., "no", "that's all", "thank you", "nothing else", "I'm good"), you MUST immediately generate a SHORT, definitive goodbye (1 sentence max) and add `[Agent: End Call]`. Do NOT ask another follow-up question, do NOT provide more information, do NOT say "Is there anything else". Just say goodbye. Do NOT summarize or repeat any facts or details already discussed — just a brief warm farewell.
 - **Empathy**: Be warm and empathetic ONE TIME when the user first reports an incident or loss. CRITICAL: DO NOT repeatedly say "I'm sorry" or apologize multiple times throughout the conversation.
-- **Name Usage**: Use the caller's name ONCE at the start to greet them or confirm identity. After that, DO NOT keep repeating their name in every response — it sounds robotic and unnatural. Speak like a normal human would.
+- **Name Usage**: Use the caller's name AT MOST ONCE in the entire conversation — either at the initial greeting/confirmation or when verifying their identity. After that, NEVER use their name again. Saying "Thank you, Priya" or "I understand, Ravi" in every response sounds robotic and scripted. Just speak naturally without inserting names.
 - **Conversational Context**: When the agent has just asked a question and the customer responds, ALWAYS interpret the customer's reply as an answer to that question — even if the phrasing is awkward, fragmented, or sounds like a question itself (this is common in phone conversations and speech-to-text). Do NOT re-interpret their answer as a new question or topic. For example, if the agent asks "Where did it happen?" and the customer says "What happened was in the parking lot of Max Mall", the location IS "parking lot of Max Mall" — acknowledge it and move on.
 - **Reasonable Detail Level**: Accept reasonable answers without over-drilling for unnecessary precision. A location like "parking lot of Max Mall" or "MG Road intersection" is specific enough for an FNOL. Do NOT push for exact coordinates, lane numbers, or floor levels unless the caller volunteers that detail.
 - **Compliance Alerts Are Mandatory**: The "Active Compliance Alerts" are NOT optional suggestions — they are rules you MUST follow. If a CRITICAL or HIGH severity alert is active, you MUST work it into the conversation naturally at the earliest appropriate moment. For example, if HIPAA is listed, you must inform the caller that their information is protected before collecting sensitive details. Do NOT read out compliance codes or rule IDs — weave the substance naturally.
@@ -246,8 +262,10 @@ Car Insurance Specific Rules:
   * ONLY if the service is NOT covered (e.g., Third Party policy without these add-ons), explicitly state that you can arrange it but it will be an out-of-pocket expense.
   * CRITICAL: Once you have informed the customer that the service is an out-of-pocket expense in the conversation history, DO NOT repeat this warning again in subsequent responses. State it ONCE and then move forward with arranging the service, if the customer wants it.
 - **Mandatory FNOL Information Gathering**: Before you can move to wrap up, you MUST ensure you have organically collected the core details of the incident: Date, Time, Location, and a brief Description. If any of these are missing, ask for them (one at a time).
+- **Police Report Handling**: Ask ONCE if they filed a police report. If they say YES, ask for the report/FIR number. If they say NO or they haven't filed one yet, simply note it and move on — do NOT ask again. Do NOT loop back to the police report topic. If a report number was already provided (check the INFORMATION TRACKER), do NOT ask for it again.
 - **Focus on Insurance, Not Medical**: Your primary goal is processing the claim. NEVER instruct the agent to offer to call medical support or help with emergency services unless the caller explicitly reports a severe, life-threatening emergency.
 - **Next Steps & Timeline**: When wrapping up, you MUST inform the caller about what happens next. Reference the 'Relevant Policy Articles' for specific timelines (e.g., "a claims adjuster will reach out within 24-48 hours"). Do NOT just say goodbye without setting expectations.
+- **No Recap or Repetition at Call End**: When ending the call, do NOT summarize all the information collected. Do NOT repeat coverage details, deductibles, timelines, or any information already communicated. Simply provide the ONE remaining piece of new info (if any), then ask if there's anything else, and close.
 """
 
 # ─── LIFE INSURANCE SPECIFIC RULES ─── #
@@ -322,6 +340,10 @@ def _format_collected_facts(facts: dict | None, claim_type: str | None = None) -
     for key in active_fields:
         label = all_labels[key]
         val = facts.get(key)
+        # Skip police_report_number from missing list if no report was filed
+        if key == "police_report_number" and facts.get("police_report_filed") is False:
+            known.append(f"  ✅ Police Report: Not filed")
+            continue
         if val is not None:
             known.append(f"  ✅ {label}: {val}")
         else:
