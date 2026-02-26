@@ -40,6 +40,15 @@ These scripts are designed to showcase the full power of your application. Read 
 
 **Customer:** "Ah, I see. Yes, please send one anyway. I need to get the car moved."
 
+**Agent:** "Understood, I'll get that arranged. By the way, did you file a police report for this accident?"
+
+**Customer:** "Yes, I did. The FIR number is FIR-2026-MH-4521."
+*(The AI should extract and track the police report number.)*
+
+**Agent:** "Perfect, thank you for that. A claims adjuster will be in touch with you within 24-48 hours. Is there anything else I can help with?"
+
+**Customer:** "No, that's all. Thank you."
+
 **[⏹ END CALL]**
 
 ---

@@ -378,7 +378,7 @@ body {
 .card-body {
   padding: 16px 20px;
   overflow-y: auto;
-  max-height: 400px;
+  max-height: 280px;
 }
 
 .card-body::-webkit-scrollbar {
@@ -625,7 +625,7 @@ body {
 }
 
 .card.suggestion .card-body {
-  max-height: 320px;
+  max-height: 280px;
 }
 
 .card.suggestion .card-icon {
