@@ -173,6 +173,7 @@ export default function FNOLFormCard({ fnolData }) {
                             <Field label="License Plate" value={member?.vehicle?.licensePlate} />
                             <BoolField label="Vehicle Drivable" value={facts.vehicle_drivable} />
                             <BoolField label="Police Report Filed" value={facts.police_report_filed} />
+                            <Field label="Police Report Number" value={facts.police_report_number} />
                             <Field label="Injuries Reported" value={facts.injuries_reported} />
                             <Field label="Other Parties Involved" value={facts.other_parties_involved} />
                         </div>

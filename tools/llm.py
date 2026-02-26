@@ -49,6 +49,7 @@ class ClaimFacts(BaseModel):
     injuries_reported: str | None
     vehicle_drivable: bool | None
     police_report_filed: bool | None
+    police_report_number: str | None
     other_parties_involved: str | None
 
 
@@ -139,11 +140,24 @@ async def extract_claim_facts(full_transcript: str) -> dict:
     This runs on the FULL transcript so the suggestion LLM gets an explicit
     list of what's known vs what's still missing."""
 
-    system_prompt = """You are a fact extraction system for insurance calls.
+    # Get current time for relative time extrapolation
+    from datetime import datetime
+    now = datetime.now()
+    current_datetime_str = now.strftime("%Y-%m-%d %H:%M")
+
+    system_prompt = f"""You are a fact extraction system for insurance calls.
 Analyze the ENTIRE conversation transcript and extract every claim-relevant fact that has been mentioned by either the customer or the agent.
 Return null for any field that has NOT been mentioned or discussed at all.
 Be generous in extraction — if someone says "at City General Hospital", that IS the location. If they say "heart attack", that IS the cause of death. If they say "February 10th", that IS the date.
 Do NOT leave a field null if the information was mentioned even casually or indirectly.
+
+CRITICAL — date_of_incident and time_of_incident rules:
+- The current date and time is: {current_datetime_str}
+- If the caller uses RELATIVE time references like "happened an hour ago", "just happened", "yesterday", "two days ago", "last night", "this morning", etc., you MUST extrapolate the actual date and time based on the current date/time above.
+- For example, if it is currently 2026-02-26 10:30 and the caller says "it happened about one hour ago", set date_of_incident to "2026-02-26" and time_of_incident to "approximately 09:30".
+- If they say "yesterday afternoon", set date_of_incident to the previous date and time_of_incident to "afternoon".
+- Always output date_of_incident in YYYY-MM-DD format when you can extrapolate it.
+- Always output time_of_incident as a specific time (HH:MM) or descriptive ("morning", "evening") when you can.
 
 CRITICAL — caller_name rules:
 - The caller_name is the CUSTOMER's own name — the person calling in.
@@ -153,7 +167,13 @@ CRITICAL — caller_name rules:
 
 CRITICAL — policy_number rules:
 - Extract the policy number ONLY if the customer explicitly states it (e.g. "my policy number is CAR-12345").
-- Return null if no policy number has been mentioned."""
+- Return null if no policy number has been mentioned.
+
+CRITICAL — police_report_number rules:
+- If the caller mentions a police report number, FIR number, or complaint number, extract it.
+- e.g. "the police report number is FIR-2026-4521" → police_report_number = "FIR-2026-4521"
+- If they say a police report was filed but did NOT provide the number, set police_report_filed to true and police_report_number to null.
+- Return null if no police report number was mentioned."""
 
     response = await client.beta.chat.completions.parse(
         model=FAST_MODEL,
@@ -162,7 +182,7 @@ CRITICAL — policy_number rules:
             {"role": "user", "content": full_transcript or "No transcript yet"},
         ],
         temperature=0.0,
-        max_tokens=300,
+        max_tokens=400,
         response_format=ClaimFacts,
     )
 
@@ -264,7 +284,7 @@ def _format_collected_facts(facts: dict | None, claim_type: str | None = None) -
         "caller_name", "policy_number", "incident_description",
         "date_of_incident", "time_of_incident", "location_of_incident",
         "injuries_reported", "vehicle_drivable", "police_report_filed",
-        "other_parties_involved",
+        "police_report_number", "other_parties_involved",
     ]
     _LIFE_FIELDS = [
         "caller_name", "policy_number", "relationship_to_policyholder",
@@ -293,6 +313,7 @@ def _format_collected_facts(facts: dict | None, claim_type: str | None = None) -
         "injuries_reported": "Injuries",
         "vehicle_drivable": "Vehicle Drivable",
         "police_report_filed": "Police Report Filed",
+        "police_report_number": "Police Report Number",
         "other_parties_involved": "Other Parties",
     }
 
