@@ -45,13 +45,13 @@ async def call_agent(state: AgentState) -> dict:
     
     messages = [SystemMessage(content=sys_prompt_text)]
     
-    # If the graph just started, we inject the transcript as the user's input.
-    # Otherwise, we use the existing messages (which contain the tool calls & results).
-    if not state.get("messages"):
-        messages.append(HumanMessage(content=state["transcript"]))
-    else:
+    # The transcript is the current user's input for this turn.
+    # We must always include it before the tool-call trace if we are mid-loop.
+    messages.append(HumanMessage(content=state["transcript"]))
+    
+    # Append the ongoing ReAct loop messages (tool calls & results) if they exist.
+    if state.get("messages"):
         messages.extend(state["messages"])
-        
     # 3. Call the LLM
     # In LangGraph streaming, astream_events will hook into this call because `llm_with_tools` is a Runnable.
     response = await llm_with_tools.ainvoke(messages)

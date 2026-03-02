@@ -330,15 +330,19 @@ async def stream_endpoint(websocket: WebSocket):
                     # -- Handle Tool End (Send Data back to UI) --
                     elif event_type == "on_tool_end":
                         # Output of the tool node is in output
-                        tool_output_str = event["data"].get("output", "")
+                        output = event["data"].get("output")
+                        
+                        if hasattr(output, "content"):
+                            tool_output_str = output.content
+                        elif isinstance(output, list):
+                            tool_output_str = output[0].content if output else ""
+                        else:
+                            tool_output_str = str(output)
                         
                         try:
                             # Our tools return JSON strings, so we parse them to send structured data to the FE
-                            if isinstance(tool_output_str, str):
-                                tool_data = json.loads(tool_output_str)
-                            else:
-                                tool_data = tool_output_str
-                                
+                            tool_data = json.loads(tool_output_str) if isinstance(tool_output_str, str) else tool_output_str
+
                             if name == "lookup_policyholder" and tool_data and "status" not in tool_data:
                                 # Found a valid member profile
                                 detected_member = tool_data
