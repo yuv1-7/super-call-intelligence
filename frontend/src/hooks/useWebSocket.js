@@ -8,6 +8,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 export function useWebSocket(url) {
     const [isConnected, setIsConnected] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [processingMessage, setProcessingMessage] = useState('');
 
     // State for each UI card
     const [transcripts, setTranscripts] = useState([]);
@@ -105,6 +106,7 @@ export function useWebSocket(url) {
                 // Append chunk to existing suggestion
                 setSuggestion((prev) => prev + data.text);
                 setIsProcessing(false);
+                setProcessingMessage('');
                 break;
 
             case 'clear_suggestion':
@@ -118,8 +120,11 @@ export function useWebSocket(url) {
 
             case 'processing':
                 setIsProcessing(true);
-                // We no longer clear the suggestion here. We only clear it if we want to explicitly reset.
-                // Otherwise, rapid speech will cause the UI to flash empty.
+                // The new LangGraph stream triggers processing on EVERY tool invocation or reasoning loop.
+                // We MUST clear the suggestion buffer when a new HumanMessage kicks off another ReAct loop, 
+                // otherwise chunks will append to the old response.
+                setSuggestion('');
+                setProcessingMessage(data.message || 'Processing...');
                 break;
 
             case 'post_call_evaluation':
@@ -162,6 +167,7 @@ export function useWebSocket(url) {
         setSuggestion('');
         setIntent(null);
         setIsProcessing(false);
+        setProcessingMessage('');
         setPostCallEvaluation(null);
         // Also reset backend state
         if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -180,6 +186,7 @@ export function useWebSocket(url) {
     return {
         isConnected,
         isProcessing,
+        processingMessage,
         transcripts,
         memberProfile,
         knowledgeDocs,

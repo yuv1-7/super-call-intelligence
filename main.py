@@ -14,8 +14,9 @@ from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 
 from data.members import get_member
-from graph.graph import build_graph
-from tools.llm import generate_post_call_evaluation, generate_agent_suggestion_stream, extract_claim_facts
+from agent.graph import build_graph
+from services.extractor import extract_claim_facts, classify_intent
+from services.evaluator import generate_post_call_evaluation
 
 load_dotenv()
 
@@ -251,81 +252,47 @@ async def stream_endpoint(websocket: WebSocket):
                     for line in call_transcript
                 )
 
+                # 1. Run intent & fact extraction outside the main graph to feed context
+                # (Can be optimized to run natively as tools later, but extracting facts up-front gives a cleaner prompt)
+                extracted_data = await asyncio.gather(
+                    classify_intent(formatted_transcript),
+                    extract_claim_facts(formatted_transcript)
+                )
+                
+                intent_res = extracted_data[0]
+                new_facts = extracted_data[1]
+
+                detected_intent = intent_res.get("intent")
+                claim_type = intent_res.get("claim_type")
+
+                # Merge new facts into accumulated state — non-null values always win
+                for key, val in new_facts.items():
+                    if val is not None:
+                        accumulated_facts[key] = val
+
+                logger.info(f"📋 Accumulated facts: {accumulated_facts}")
+
+                # Send intent to frontend
+                if detected_intent:
+                    await websocket.send_json({
+                        "type": "intent",
+                        "data": {
+                            "intent": detected_intent,
+                            "claim_type": claim_type,
+                        },
+                    })
+
+                # 2. Setup state for ReAct Agent
                 state = {
                     "transcript": text,
                     "full_transcript": formatted_transcript,
                     "is_finalized": True,
-                    "intent": None,
-                    "claim_type": None,
-                    "entities": None,
+                    "intent": detected_intent,
+                    "claim_type": claim_type,
                     "member_data": detected_member,
-                    "knowledge_docs": None,
-                    "compliance_alerts": None,
-                    "suggestion": None,
+                    "accumulated_facts": accumulated_facts,
+                    "messages": [] # Empty on start, populated by graph iteratively
                 }
-
-                # Check if we need fact extraction — skip if key facts are already filled
-                key_facts_filled = sum(
-                    1 for k in ["date_of_incident", "location_of_incident", "incident_description", "cause_of_death", "caller_name"]
-                    if accumulated_facts.get(k)
-                )
-
-                if key_facts_filled >= 4:
-                    # Enough facts accumulated — skip the extra LLM call for speed
-                    result = await graph.ainvoke(state)
-                    logger.info("⚡ Skipped fact extraction (sufficient facts already)")
-                else:
-                    # Run LangGraph pipeline AND fact extraction in parallel
-                    result, new_facts = await asyncio.gather(
-                        graph.ainvoke(state),
-                        extract_claim_facts(formatted_transcript),
-                    )
-                    # Merge new facts into accumulated state — non-null values always win
-                    for key, val in new_facts.items():
-                        if val is not None:
-                            accumulated_facts[key] = val
-
-                logger.info(f"📋 Accumulated facts: {accumulated_facts}")
-
-                # Track detected intent
-                if result.get("intent"):
-                    detected_intent = result["intent"]
-                    await websocket.send_json({
-                        "type": "intent",
-                        "data": {
-                            "intent": result["intent"],
-                            "claim_type": result.get("claim_type", ""),
-                        },
-                    })
-
-                # Send member data (slow path backup)
-                if result.get("member_data"):
-                    detected_member = result["member_data"]
-                    await websocket.send_json({
-                        "type": "member_profile",
-                        "data": result["member_data"],
-                    })
-
-                # Send knowledge articles — filter by detected claim type
-                knowledge_docs = result.get("knowledge_docs") or []
-                claim_type = result.get("claim_type", "")
-                if claim_type and knowledge_docs:
-                    knowledge_docs = [
-                        doc for doc in knowledge_docs
-                        if doc.get("category", "") == "general" or doc.get("category", "") == claim_type
-                    ]
-                if knowledge_docs:
-                    await websocket.send_json({
-                        "type": "knowledge",
-                        "data": knowledge_docs,
-                    })
-
-                # Send compliance alerts
-                if result.get("compliance_alerts"):
-                    await websocket.send_json({
-                        "type": "compliance",
-                        "data": result["compliance_alerts"],
-                    })
 
                 # Clear the previous suggestion on the frontend just before starting the new stream
                 await websocket.send_json({
@@ -333,39 +300,73 @@ async def stream_endpoint(websocket: WebSocket):
                     "data": {},
                 })
 
-                # Determine member data context for the LLM
-                member_data_for_llm = result.get("member_data")
-                if not member_data_for_llm and result.get("entities"):
-                    # A lookup was attempted but failed — tell the LLM
-                    attempted = result["entities"]
-                    parts = []
-                    if attempted.get("policy_id"):
-                        parts.append(f"policy number '{attempted['policy_id']}'")
-                    if attempted.get("phone"):
-                        parts.append(f"phone number '{attempted['phone']}'")
-                    if parts:
-                        member_data_for_llm = f"LOOKUP FAILED: No account found for {' or '.join(parts)}. The caller may have provided incorrect information."
-
-                logger.info(f"📚 Knowledge docs passed to LLM: {[d.get('docId', 'unknown') for d in knowledge_docs]}")
-                suggestion_stream = generate_agent_suggestion_stream(
-                    transcript=text,
-                    full_transcript=formatted_transcript,
-                    intent=result.get("intent"),
-                    claim_type=result.get("claim_type"),
-                    member_data=member_data_for_llm,
-                    knowledge_docs=knowledge_docs,
-                    compliance_alerts=result.get("compliance_alerts"),
-                    collected_facts=accumulated_facts,
-                )
+                logger.info("🧠 Slow path: Starting Agent ReAct loop...")
                 
-                async for chunk in suggestion_stream:
-                    await websocket.send_json({
-                        "type": "suggestion_chunk",
-                        "data": {"text": chunk},
-                    })
+                # 3. Stream native LangGraph events
+                # Use v2 for latest LangGraph event schema
+                async for event in graph.astream_events(state, version="v2"):
+                    event_type = event["event"]
+                    name = event.get("name", "")
 
-                logger.info("🧠 Slow path: all cards sent")
+                    # -- Handle Tokens (Agent Speaking) --
+                    if event_type == "on_chat_model_stream":
+                        chunk = event["data"]["chunk"]
+                        # The chunk could be for a tool call (no content) or for the user (content)
+                        if chunk.content:
+                            await websocket.send_json({
+                                "type": "suggestion_chunk",
+                                "data": {"text": chunk.content},
+                            })
 
+                    # -- Handle Tool Start (UI Processing updates) --
+                    elif event_type == "on_tool_start":
+                        # Send friendly processing messages based on tool invoked
+                        msg = "Processing..."
+                        if name == "lookup_policyholder":
+                            msg = "Looking up policy..."
+                        elif name == "search_knowledge_base":
+                            msg = "Searching knowledge base..."
+                        elif name == "check_compliance_rules":
+                            msg = "Checking compliance rules..."
+                            
+                        await websocket.send_json({
+                            "type": "processing",
+                            "data": {"message": msg},
+                        })
+                        
+                    # -- Handle Tool End (Send Data back to UI) --
+                    elif event_type == "on_tool_end":
+                        # Output of the tool node is in output
+                        tool_output_str = event["data"].get("output", "")
+                        
+                        try:
+                            # Our tools return JSON strings, so we parse them to send structured data to the FE
+                            if isinstance(tool_output_str, str):
+                                tool_data = json.loads(tool_output_str)
+                            else:
+                                tool_data = tool_output_str
+                                
+                            if name == "lookup_policyholder" and tool_data and "status" not in tool_data:
+                                # Found a valid member profile
+                                detected_member = tool_data
+                                await websocket.send_json({
+                                    "type": "member_profile",
+                                    "data": detected_member,
+                                })
+                            elif name == "search_knowledge_base" and tool_data.get("results"):
+                                await websocket.send_json({
+                                    "type": "knowledge",
+                                    "data": tool_data["results"],
+                                })
+                            elif name == "check_compliance_rules" and tool_data.get("alerts"):
+                                await websocket.send_json({
+                                    "type": "compliance",
+                                    "data": tool_data["alerts"],
+                                })
+                        except Exception as e:
+                            logger.error(f"Failed to parse tool output from {name}: {e}")
+
+                logger.info("🧠 Slow path: Stream complete.")
 
     except WebSocketDisconnect:
         logger.info("📞 WebSocket disconnected")

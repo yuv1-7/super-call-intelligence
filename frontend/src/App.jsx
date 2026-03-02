@@ -28,6 +28,7 @@ export default function App() {
     const {
         isConnected,
         isProcessing,
+        processingMessage,
         transcripts,
         memberProfile,
         knowledgeDocs,
@@ -80,7 +81,7 @@ export default function App() {
     const statusText = isListening
         ? '🔴 Live — Listening'
         : isProcessing
-            ? 'Processing...'
+            ? processingMessage || 'Processing...'
             : isConnected
                 ? 'Ready'
                 : 'Disconnected';
