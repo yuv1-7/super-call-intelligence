@@ -50,8 +50,8 @@ async def generate_post_call_evaluation(
     """
 
     # Format transcript for LLM
-    formatted_transcript = "\\n".join(
-        f"[{line['speaker']} {line['timestamp']}]: \\\"{line['text']}\\\""
+    formatted_transcript = "\n".join(
+        f"[{line['speaker']} {line['timestamp']}]: \"{line['text']}\""
         for line in transcript_lines
     )
 

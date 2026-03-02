@@ -1,8 +1,6 @@
 import json
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langgraph.prebuilt import ToolNode
-from openai import AsyncOpenAI
-import os
 
 from agent.state import AgentState
 from agent.prompts import generate_system_prompt

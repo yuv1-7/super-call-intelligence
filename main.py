@@ -7,7 +7,7 @@ import time
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -80,7 +80,7 @@ async def get_speech_token():
     speech_region = os.getenv("AZURE_SPEECH_REGION", "eastus")
 
     if not speech_key:
-        return {"error": "AZURE_SPEECH_KEY not configured on the server"}, 500
+        raise HTTPException(status_code=500, detail="AZURE_SPEECH_KEY not configured on the server")
 
     token_url = f"https://{speech_region}.api.cognitive.microsoft.com/sts/v1.0/issueToken"
 
@@ -100,7 +100,7 @@ async def get_speech_token():
         }
     else:
         logger.error(f"Failed to fetch speech token: {response.status_code} {response.text}")
-        return {"error": "Failed to fetch speech token"}, 500
+        raise HTTPException(status_code=500, detail="Failed to fetch speech token")
 
 
 
@@ -154,13 +154,6 @@ async def stream_endpoint(websocket: WebSocket):
                     "data": evaluation,
                 })
                 logger.info("📋 Post-call evaluation sent")
-                
-                # 🔄 Reset state for the next call on this connection
-                call_transcript = []
-                call_start_time = time.time()
-                detected_intent = None
-                detected_member = None
-                accumulated_facts = {}
                 
                 continue
 
