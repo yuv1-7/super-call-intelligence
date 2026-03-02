@@ -16,11 +16,12 @@ with open(os.path.join(_DATA_DIR, "compliance_rules.json"), "r", encoding="utf-8
 def search_knowledge(query: str, category: str | None = None, top_k: int = 2) -> list[dict]:
     """
     Simple keyword-match search over the knowledge base.
-    Scores each doc by how many of its tags appear in the query.
+    Scores each doc by how many of its tags appear in the query, plus matches in title/content.
     Filters by category (e.g. 'car_insurance', 'life_insurance') when provided.
     Returns the top-k results sorted by relevance.
     """
     query_lower = query.lower()
+    query_words = set(query_lower.split())
     scored: list[tuple[int, dict]] = []
 
     for doc in KNOWLEDGE_BASE:
@@ -29,7 +30,14 @@ def search_knowledge(query: str, category: str | None = None, top_k: int = 2) ->
         if category and doc_cat != "general" and doc_cat != category:
             continue
 
+        search_text = " ".join(doc["tags"]) + " " + doc.get("title", "").lower() + " " + doc.get("content", "").lower()
+        
+        # Original logic: do tags appear in the query?
         score = sum(1 for tag in doc["tags"] if tag in query_lower)
+        
+        # New logic: do query words appear in the document's searchable text?
+        score += sum(1 for word in query_words if word in search_text and len(word) > 3)
+
         if score > 0:
             scored.append((score, doc))
 

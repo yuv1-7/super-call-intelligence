@@ -17,6 +17,7 @@ from data.members import get_member
 from agent.graph import build_graph
 from services.extractor import extract_claim_facts, classify_intent
 from services.evaluator import generate_post_call_evaluation
+from data.knowledge import search_knowledge
 
 load_dotenv()
 
@@ -274,6 +275,17 @@ async def stream_endpoint(websocket: WebSocket):
                             "claim_type": claim_type,
                         },
                     })
+                    
+                    # Proactively fetch knowledge so UI gets it immediately without waiting for LLM tool call
+                    if claim_type and not accumulated_facts.get("proactive_kb_sent"):
+                        docs = search_knowledge(query="procedures requirements timeline", category=claim_type, top_k=3)
+                        if docs:
+                            accumulated_facts["proactive_kb_sent"] = True
+                            await websocket.send_json({
+                                "type": "knowledge",
+                                "data": docs,
+                            })
+                            logger.info(f"⚡ Proactively sent {len(docs)} knowledge docs to frontend for {claim_type}.")
 
                 # 2. Setup state for ReAct Agent
                 state = {
@@ -342,6 +354,8 @@ async def stream_endpoint(websocket: WebSocket):
                         try:
                             # Our tools return JSON strings, so we parse them to send structured data to the FE
                             tool_data = json.loads(tool_output_str) if isinstance(tool_output_str, str) else tool_output_str
+                            
+                            logger.info(f"🔧 Tool {name} finished. Received tool_data keys: {tool_data.keys() if isinstance(tool_data, dict) else type(tool_data)}")
 
                             if name == "lookup_policyholder" and tool_data and "status" not in tool_data:
                                 # Found a valid member profile
