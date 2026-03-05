@@ -1,6 +1,8 @@
 # Mock CRM Database for National Sentinel Insurance
 # This simulates the data normally pulled from the ClaimSphere Policy Administration System
 
+import re
+
 MOCK_MEMBER_DATABASE = {
     "(555) 019-8372": {
         "name": "Michael T. Henderson",
@@ -63,14 +65,23 @@ MOCK_MEMBER_DATABASE = {
     }
 }
 
+
+def _normalize_phone(phone: str) -> str:
+    """Strip all non-digit characters for comparison. '(555) 019-8372' -> '5550198372'"""
+    return re.sub(r'\D', '', phone.strip())
+
+
 def get_member_by_phone(phone_number: str) -> dict:
     """
     Simulates a ClaimSphere CRM lookup using the caller's phone number.
+    Normalizes to digits-only so any format (STT, formatted, raw) will match.
     Returns the member profile dictionary if found, else None.
     """
-    # Simple normalization to handle potential input variations
-    normalized_input = phone_number.strip()
-    return MOCK_MEMBER_DATABASE.get(normalized_input)
+    normalized_input = _normalize_phone(phone_number)
+    for key, member in MOCK_MEMBER_DATABASE.items():
+        if _normalize_phone(key) == normalized_input:
+            return member
+    return None
 
 def get_member_by_policy(policy_number: str) -> dict:
     """
@@ -82,6 +93,18 @@ def get_member_by_policy(policy_number: str) -> dict:
         if member["policy_number"] == normalized_policy:
             return member
     return None
+
+def get_member(policy_id: str | None = None, phone: str | None = None) -> dict | None:
+    """
+    Unified lookup — delegates to the appropriate search function.
+    Used by agent/tools.py and main.py.
+    """
+    if policy_id:
+        return get_member_by_policy(policy_id)
+    if phone:
+        return get_member_by_phone(phone)
+    return None
+
 
 def get_all_members() -> list:
     """

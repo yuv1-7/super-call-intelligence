@@ -8,7 +8,7 @@ from data.knowledge import search_knowledge, get_compliance_alerts
 @tool
 def lookup_policyholder(policy_id: Optional[str] = None, phone: Optional[str] = None) -> str:
     """
-    Look up a policyholder's insurance account details by their Policy ID (e.g. CAR-100001) 
+    Look up a policyholder's insurance account details by their Policy ID (e.g. NS-88402911) 
     or their phone number. Only provide ONE of the arguments if possible.
     """
     if not policy_id and not phone:

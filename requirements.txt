@@ -8,3 +8,6 @@ httpx
 pydantic
 langchain-openai
 langchain-core
+azure-search-documents
+sentence-transformers
+torch

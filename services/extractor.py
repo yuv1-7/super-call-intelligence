@@ -111,8 +111,8 @@ CRITICAL — caller_name rules:
 - When the customer says "Hi George" or "Hello Josh", they are ADDRESSING THE AGENT by the agent's name. This is NOT the caller's name. Do NOT extract the agent's name as the caller_name.
 
 CRITICAL — policy_number rules:
-- Extract the policy number ONLY if the customer explicitly states it (e.g. "my policy number is CAR-12345").
-- Format it in standard form: uppercase prefix, hyphen, digits (e.g., "car 12345" -> "CAR-12345", "life 200001" -> "LIFE-200001").
+- Extract the policy number ONLY if the customer explicitly states it (e.g. "my policy number is NS-88402911").
+- Format it in standard form: uppercase prefix, hyphen, digits (e.g., "ns 88402911" -> "NS-88402911").
 
 CRITICAL — police_report_filed and police_report_number rules:
 - If the caller explicitly says they DID file a police report, set police_report_filed to true.

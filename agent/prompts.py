@@ -73,7 +73,7 @@ Core Rules:
 - **Policy Lookup Priority**: ONLY if the Policyholder Data is "Not yet identified", ask for the policy number first to look up their account. If they cannot provide it, ask for their phone number as an alternative. You CANNOT search by name alone. Use the `lookup_policyholder` tool to fetch their data once you have a policy number or phone number.
 - **Account Verification Complete**: CRITICAL RULE: ALWAYS look at the "Policyholder Data" section. If it shows ANY member details (name, policy type, etc.), YOU ALREADY HAVE THEIR ACCOUNT AND POLICY OPEN. You are permanently forbidden from asking for their policy number, phone number, or name. NEVER ask for details to "look up their account", "verify their policy", or "so I can assist you" because IT IS ALREADY VERIFIED.
 - **Lookup Failed**: If a tool lookup fails, politely inform the customer that you were unable to locate an account with the information provided and ask them to double-check the number. Offer alternatives (e.g., "Could you try your phone number instead?"). Do NOT just silently re-ask for the same info without acknowledging the failure.
-- **Role of Knowledge Docs**: Use the `search_knowledge_base` tool to find procedure facts, timelines, and required documents. You MUST ensure all key points from these articles are communicated to the caller by the end of the call, SPREAD across multiple responses — ONE new topic per response. Skip steps that are already covered or irrelevant. Specifically, always look for and communicate:
+- **Role of Knowledge Docs**: Relevant knowledge articles are PRE-LOADED in the "KNOWLEDGE BASE ARTICLES" section below. Reference them directly — do NOT call `search_knowledge_base` unless you need information on a DIFFERENT topic not covered below. You MUST ensure all key points from these articles are communicated to the caller by the end of the call, SPREAD across multiple responses — ONE new topic per response. Skip steps that are already covered or irrelevant. Specifically, always look for and communicate:
   * **Timelines** — any processing durations or response windows mentioned
   * **Required documents** — anything the caller needs to submit
   * **Payout or settlement info** — any options or amounts mentioned
@@ -141,12 +141,32 @@ RULES:
 - **Closing**: Once all the above have been covered, ask if there's anything else. When they say no, give a short goodbye + [Agent: End Call].
 """
 
+def _format_knowledge_docs(docs: list | None) -> str:
+    """Format pre-fetched knowledge docs for inclusion in the system prompt."""
+    if not docs:
+        return "No knowledge articles pre-loaded. Use `search_knowledge_base` tool if needed."
+    
+    sections = []
+    for i, doc in enumerate(docs, 1):
+        title = doc.get('title', 'Untitled')
+        section = doc.get('section_heading', '')
+        content = doc.get('content', '')
+        header = f"--- Article {i}: {title}"
+        if section:
+            header += f" > {section}"
+        header += " ---"
+        sections.append(f"{header}\n{content}")
+    
+    return "\n\n".join(sections)
+
+
 def generate_system_prompt(
     intent: Optional[str] = None,
     claim_type: Optional[str] = None,
     member_data: Optional[dict] = None,
     collected_facts: Optional[dict] = None,
-    full_transcript: str = ""
+    full_transcript: str = "",
+    knowledge_docs: Optional[list] = None,
 ) -> str:
     """Dynamically builds the system message with current context."""
     if claim_type == "life_insurance":
@@ -156,6 +176,7 @@ def generate_system_prompt(
 
     facts_text = _format_collected_facts(collected_facts, claim_type)
     member_text = member_data if member_data else "Not yet identified"
+    knowledge_text = _format_knowledge_docs(knowledge_docs)
     
     return f"""{base_rules}
 
@@ -172,4 +193,9 @@ Policyholder Data:
 {facts_text}
 ══════════════════════════════════
 CRITICAL: Items marked ✅ above have ALREADY been provided. You are FORBIDDEN from asking about them. Only ask about ❓ items if they are relevant to this claim type.
+
+══════ KNOWLEDGE BASE ARTICLES ══════
+{knowledge_text}
+══════════════════════════════════════
+Use the information above to guide the caller. Do NOT call `search_knowledge_base` unless you need info on a topic NOT covered above.
 """

@@ -13,8 +13,19 @@ export default function MemberCard({ member }) {
         );
     }
 
-    const isCarPolicy = member.policyId?.startsWith('CAR');
-    const isLifePolicy = member.policyId?.startsWith('LIFE');
+    // Determine policy type from policy_number prefix (NS-, CAR-, LIFE-)
+    const policyNumber = member.policy_number || '';
+    const isLifePolicy = policyNumber.toUpperCase().startsWith('LIFE');
+
+    // Coverage limits
+    const limits = member.coverage_limits || {};
+    const collisionDeductible = limits.collision_deductible || 'N/A';
+    const comprehensiveDeductible = limits.comprehensive_deductible || 'N/A';
+    const bodilyInjury = limits.bodily_injury || 'N/A';
+    const propertyDamage = limits.property_damage || 'N/A';
+
+    // Add-ons
+    const addOns = member.add_ons || [];
 
     return (
         <div className="card member">
@@ -22,54 +33,62 @@ export default function MemberCard({ member }) {
                 <div className="card-icon">👤</div>
                 <div>
                     <div className="card-title">{member.name}</div>
-                    <div className="card-subtitle">{member.policyId}</div>
+                    <div className="card-subtitle">{policyNumber}</div>
                 </div>
             </div>
             <div className="card-body">
                 <div className="member-grid">
                     <div className="member-field">
-                        <span className="label">Policy Type</span>
+                        <span className="label">Status</span>
                         <span className="value">
-                            <span className={`member-badge ${isCarPolicy ? 'car' : 'life'}`}>
-                                {isCarPolicy ? '🚗' : '🛡️'} {member.coverageType}
+                            <span className={`member-badge ${member.policy_status === 'ACTIVE' ? 'active' : ''}`}>
+                                {member.policy_status || 'Unknown'}
                             </span>
                         </span>
                     </div>
                     <div className="member-field">
-                        <span className="label">Status</span>
-                        <span className="value">
-                            <span className="member-badge active">{member.status}</span>
-                        </span>
-                    </div>
-                    <div className="member-field">
-                        <span className="label">Coverage Amount</span>
-                        <span className="value">₹{(member.coverageAmount || 0).toLocaleString('en-IN')}</span>
-                    </div>
-                    <div className="member-field">
-                        <span className="label">Premium</span>
-                        <span className="value">₹{(member.premium || 0).toLocaleString('en-IN')}/yr</span>
+                        <span className="label">DOB</span>
+                        <span className="value">{member.dob || 'N/A'}</span>
                     </div>
 
-                    {/* Car-specific fields */}
-                    {isCarPolicy && member.vehicle && (
+                    {/* Vehicle — shown for all non-life policies */}
+                    {!isLifePolicy && member.vehicle && (
                         <>
                             <div className="member-field">
                                 <span className="label">Vehicle</span>
-                                <span className="value">{member.vehicle.year} {member.vehicle.make} {member.vehicle.model}</span>
+                                <span className="value">{member.vehicle}</span>
                             </div>
                             <div className="member-field">
-                                <span className="label">License Plate</span>
-                                <span className="value">{member.vehicle.licensePlate}</span>
-                            </div>
-                            <div className="member-field">
-                                <span className="label">Deductible</span>
-                                <span className="value">₹{(member.deductible || 0).toLocaleString('en-IN')}</span>
-                            </div>
-                            <div className="member-field">
-                                <span className="label">Prior Claims</span>
-                                <span className="value">{member.claimHistory?.length || 0}</span>
+                                <span className="label">VIN</span>
+                                <span className="value">{member.vin || 'N/A'}</span>
                             </div>
                         </>
+                    )}
+
+                    {/* Coverage limits */}
+                    <div className="member-field">
+                        <span className="label">Bodily Injury</span>
+                        <span className="value">{bodilyInjury}</span>
+                    </div>
+                    <div className="member-field">
+                        <span className="label">Property Damage</span>
+                        <span className="value">{propertyDamage}</span>
+                    </div>
+                    <div className="member-field">
+                        <span className="label">Collision Deductible</span>
+                        <span className="value">{collisionDeductible}</span>
+                    </div>
+                    <div className="member-field">
+                        <span className="label">Comp. Deductible</span>
+                        <span className="value">{comprehensiveDeductible}</span>
+                    </div>
+
+                    {/* Add-ons */}
+                    {addOns.length > 0 && (
+                        <div className="member-field full-width">
+                            <span className="label">Add-Ons</span>
+                            <span className="value">{addOns.join(' • ')}</span>
+                        </div>
                     )}
 
                     {/* Life-specific fields */}
@@ -88,21 +107,13 @@ export default function MemberCard({ member }) {
                         </>
                     )}
 
-                    {/* Add-ons for car */}
-                    {isCarPolicy && member.addOns?.length > 0 && (
-                        <div className="member-field full-width">
-                            <span className="label">Add-Ons</span>
-                            <span className="value">{member.addOns.join(' • ')}</span>
-                        </div>
-                    )}
-
                     <div className="member-field">
                         <span className="label">Phone</span>
-                        <span className="value">{member.phone}</span>
+                        <span className="value">{member.phone || 'N/A'}</span>
                     </div>
-                    <div className="member-field">
-                        <span className="label">Email</span>
-                        <span className="value">{member.email}</span>
+                    <div className="member-field full-width">
+                        <span className="label">Address</span>
+                        <span className="value">{member.address || 'N/A'}</span>
                     </div>
                 </div>
             </div>

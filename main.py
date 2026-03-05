@@ -17,7 +17,7 @@ from data.members import get_member
 from agent.graph import build_graph
 from services.extractor import extract_claim_facts, classify_intent
 from services.evaluator import generate_post_call_evaluation
-from data.knowledge import search_knowledge
+from data.knowledge import search_knowledge, warmup as warmup_knowledge
 
 load_dotenv()
 
@@ -33,7 +33,10 @@ async def lifespan(app: FastAPI):
     global graph
     logger.info("🚀 Building LangGraph pipeline...")
     graph = build_graph()
-    logger.info("✅ LangGraph ready. Server is live.")
+    logger.info("✅ LangGraph ready.")
+    logger.info("🔥 Pre-loading knowledge module (embedding model + search client)...")
+    warmup_knowledge()
+    logger.info("✅ Server is live.")
     yield
     logger.info("🛑 Server shutting down.")
 
@@ -55,7 +58,8 @@ app.add_middleware(
 )
 
 # ─── Regex patterns for the FAST PATH ─── #
-POLICY_REGEX = re.compile(r"\b(CAR|LIFE)[-\s]?(\d{4,})\b", re.IGNORECASE)
+POLICY_REGEX = re.compile(r"\b(NS|CAR|LIFE)[-\s]?(\d{4,})\b", re.IGNORECASE)
+PHONE_REGEX = re.compile(r"(?:\b|\()\d{3}\)?[-\s.]?\d{3}[-\s.]?\d{4}\b")
 
 
 # ─── Health check ─── #
@@ -115,8 +119,10 @@ async def stream_endpoint(websocket: WebSocket):
     call_transcript: list[dict] = []
     call_start_time = time.time()
     detected_intent = None
+    claim_type = None
     detected_member = None
     accumulated_facts: dict = {}  # Persistent fact state across the entire call
+    proactive_kb_sent = False  # Track whether we already sent knowledge docs to frontend
 
     try:
         while True:
@@ -166,7 +172,9 @@ async def stream_endpoint(websocket: WebSocket):
                 call_transcript = []
                 call_start_time = time.time()
                 detected_intent = None
+                claim_type = None
                 detected_member = None
+                proactive_kb_sent = False
                 accumulated_facts = {}
                 continue
 
@@ -212,11 +220,11 @@ async def stream_endpoint(websocket: WebSocket):
             })
 
             # ═══════════════════════════════════════════
-            # ⚡ FAST PATH — Regex policy ID extraction
+            # ⚡ FAST PATH — Regex policy ID / phone extraction
             # ═══════════════════════════════════════════
             policy_match = POLICY_REGEX.search(text)
             if policy_match:
-                # Reconstruct standardized ID (e.g. CAR-12345) regardless of spaces
+                # Reconstruct standardized ID (e.g. NS-88402911) regardless of spaces
                 policy_id = f"{policy_match.group(1).upper()}-{policy_match.group(2)}"
                 member = get_member(policy_id=policy_id)
                 if member:
@@ -228,6 +236,22 @@ async def stream_endpoint(websocket: WebSocket):
                     logger.info(f"⚡ Fast path: sent profile for {policy_id}")
                 else:
                     logger.info(f"⚡ Fast path: no member found for {policy_id}")
+
+            # ⚡ Phone number fast path — try regex phone match if no member yet
+            if not detected_member:
+                phone_match = PHONE_REGEX.search(text)
+                if phone_match:
+                    phone_raw = phone_match.group(0)
+                    member = get_member(phone=phone_raw)
+                    if member:
+                        detected_member = member
+                        await websocket.send_json({
+                            "type": "member_profile",
+                            "data": member,
+                        })
+                        logger.info(f"⚡ Fast path (phone): sent profile for {phone_raw}")
+                    else:
+                        logger.info(f"⚡ Fast path (phone): no member found for {phone_raw}")
 
             # ═══════════════════════════════════════════
             # 🧠 SLOW PATH — LangGraph (only on finalized)
@@ -246,15 +270,17 @@ async def stream_endpoint(websocket: WebSocket):
                     for line in call_transcript
                 )
 
-                # 1. Run intent & fact extraction outside the main graph to feed context
-                # (Can be optimized to run natively as tools later, but extracting facts up-front gives a cleaner prompt)
+                # 1. Run intent, fact extraction, AND knowledge search ALL in parallel
+                # asyncio.to_thread wraps the sync search_knowledge in a threadpool call
                 extracted_data = await asyncio.gather(
                     classify_intent(formatted_transcript),
-                    extract_claim_facts(formatted_transcript)
+                    extract_claim_facts(formatted_transcript),
+                    asyncio.to_thread(search_knowledge, "procedures requirements timeline coverage documents", claim_type, 5),
                 )
                 
                 intent_res = extracted_data[0]
                 new_facts = extracted_data[1]
+                knowledge_docs = extracted_data[2]  # Pre-fetched knowledge articles
 
                 detected_intent = intent_res.get("intent")
                 claim_type = intent_res.get("claim_type")
@@ -265,6 +291,7 @@ async def stream_endpoint(websocket: WebSocket):
                         accumulated_facts[key] = val
 
                 logger.info(f"📋 Accumulated facts: {accumulated_facts}")
+                logger.info(f"📚 Pre-fetched {len(knowledge_docs)} knowledge docs in parallel")
 
                 # Send intent to frontend
                 if detected_intent:
@@ -276,18 +303,16 @@ async def stream_endpoint(websocket: WebSocket):
                         },
                     })
                     
-                    # Proactively fetch knowledge so UI gets it immediately without waiting for LLM tool call
-                    if claim_type and not accumulated_facts.get("proactive_kb_sent"):
-                        docs = search_knowledge(query="procedures requirements timeline", category=claim_type, top_k=3)
-                        if docs:
-                            accumulated_facts["proactive_kb_sent"] = True
-                            await websocket.send_json({
-                                "type": "knowledge",
-                                "data": docs,
-                            })
-                            logger.info(f"⚡ Proactively sent {len(docs)} knowledge docs to frontend for {claim_type}.")
+                    # Send pre-fetched knowledge to frontend immediately
+                    if knowledge_docs and not proactive_kb_sent:
+                        proactive_kb_sent = True
+                        await websocket.send_json({
+                            "type": "knowledge",
+                            "data": knowledge_docs,
+                        })
+                        logger.info(f"⚡ Sent {len(knowledge_docs)} knowledge docs to frontend for {claim_type}.")
 
-                # 2. Setup state for ReAct Agent
+                # 2. Setup state for ReAct Agent — knowledge_docs injected directly into prompt
                 state = {
                     "transcript": text,
                     "full_transcript": formatted_transcript,
@@ -296,6 +321,7 @@ async def stream_endpoint(websocket: WebSocket):
                     "claim_type": claim_type,
                     "member_data": detected_member,
                     "accumulated_facts": accumulated_facts,
+                    "knowledge_docs": knowledge_docs,  # Pre-fetched, injected into system prompt
                     "messages": [] # Empty on start, populated by graph iteratively
                 }
 

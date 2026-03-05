@@ -7,18 +7,18 @@ These scripts are designed to showcase the full power of your application. Read 
 ## 🚗 Scenario 1: Phone Lookup & Towing (Natural Flow)
 **Goal:** Show the AI handling a missing policy number gracefully by switching to a phone number lookup, deducing facts (date), and enforcing coverage limits naturally.
 
-**Data Targeted:** Priya Sharma (`CAR-100002` / `+91 87654-32109` - Third Party Only)
+**Data Targeted:** Sarah Jenkins (`(555) 014-9921` - Rideshare Add-on only, NO Roadside Assistance)
 
 **[🎤 START CALL]**
 
-**Agent:** "Thank you for calling Super Insurance claims. This call is recorded for quality purposes. My name is Alex, how can I help you today?"
+**Agent:** "Thank you for calling National Sentinel Insurance claims. This call is recorded for quality and compliance purposes. My name is Alex, how can I help you today?"
 
 **Customer:** "Hi Alex. I just got into a car accident. My car is pretty messed up."
-*(Wait for the AI intent to classify as `car_accident` and show the Accident FNOL Knowledge Card. The AI should deduce the accident happened today.)*
+*(Wait for AI intent to classify as `car_accident` and show the Accident FNOL Knowledge Card. The AI should deduce the accident happened today.)*
 
-**Agent:** "I'm so sorry to hear that. Are you okay? "
+**Agent:** "I am so sorry to hear that you've been involved in an incident. I know this can be a stressful time, but I am here to help you get this resolved. Are you currently in a safe location, and is anyone in need of emergency medical assistance?"
 
-**Customer:** "Yeah, we're completely fine. The other guy is fine too."
+**Customer:** "Yeah, we're completely fine. The other guy is fine too. No injuries."
 *(Wait for AI suggestion to update. It will likely ask for the policy number.)*
 
 **Agent:** "I'm very glad to hear everyone is safe. Do you happen to have your policy number handy so I can pull up your account?"
@@ -28,24 +28,24 @@ These scripts are designed to showcase the full power of your application. Read 
 
 **Agent:** "Not a problem at all. Can I have the phone number associated with your account?"
 
-**Customer:** "Sure, it's 876 543 2109."
-*(Wait for Fast-Path to instantly pull up Priya Sharma's profile based on the phone number.)*
+**Customer:** "Sure, it's 555 014 9921."
+*(Wait for the AI to instantly pull up Sarah Jenkins' profile based on the phone number.)*
 
-**Agent:** "Thank you, Priya. I see your 2022 Maruti Suzuki Swift here. Is the car drivable, or do you need a tow?"
+**Agent:** "Thank you, Sarah. I see your 2018 Toyota RAV4 here. Is the car drivable, or do you need a tow?"
 
 **Customer:** "It's definitely not drivable. Can you send a tow truck?"
-*(Wait for the AI to check coverage. It should notice Priya only has 'Third Party' coverage and NO towing add-ons.)*
+*(Wait for the AI to check coverage. It should notice Sarah has NO 'Roadside Assistance' add-ons.)*
 
-**Agent:** "I can certainly arrange a tow truck for you. Because your current policy only includes Third-Party coverage, the towing won't be covered, so it will be an out-of-pocket expense. Would you still like me to send one?"
+**Agent:** "I can certainly arrange a tow truck for you through our partner Agero. However, because your current policy does not include Roadside Assistance, the towing will be an out-of-pocket expense. Would you still like me to send one?"
 
 **Customer:** "Ah, I see. Yes, please send one anyway. I need to get the car moved."
 
 **Agent:** "Understood, I'll get that arranged. By the way, did you file a police report for this accident?"
 
-**Customer:** "Yes, I did. The FIR number is FIR-2026-MH-4521."
+**Customer:** "Yes, I did. The incident number is PR-2026-WA-881."
 *(The AI should extract and track the police report number.)*
 
-**Agent:** "Perfect, thank you for that. A claims adjuster will be in touch with you within 24-48 hours. Is there anything else I can help with?"
+**Agent:** "Perfect, thank you for that detail. I have successfully filed your claim. A dedicated National Sentinel claims adjuster will contact you within 24 hours to discuss the repair process. Is there anything else I can help with?"
 
 **Customer:** "No, that's all. Thank you."
 
@@ -54,78 +54,89 @@ These scripts are designed to showcase the full power of your application. Read 
 ---
 
 ## 🚨 Scenario 2: Fake Policy & Identity Mismatch
-**Goal:** Show the system gracefully recovering from a fake policy number, then dealing with a caller whose name doesn't match the primary policyholder.
+**Goal:** Show the system gracefully recovering from a fake policy number, then dealing with a caller whose name doesn't match the primary policyholder, followed by HIPAA compliance during an injury report.
 
-**Data Targeted:** Rajesh Kumar (`CAR-100001` - but caller is his brother, Ravi)
+**Data Targeted:** Michael T. Henderson (`NS-88402911` - Caller is his wife, Jessica)
 
 **[🎤 START CALL]**
 
-**Agent:** "Thank you for calling Super Insurance claims. This call is being recorded. My name is Alex, how may I assist you?"
+**Agent:** "Thank you for calling National Sentinel Insurance claims. This call is being recorded for quality and compliance purposes. My name is Alex, how may I assist you?"
 
-**Customer:** "Hi Alex, someone backed into my car in the parking lot and drove off. I need to file a claim."
+**Customer:** "Hi Alex, someone ran a red light and hit my husband's car. I need to file a claim for him."
 
-**Agent:** "I'm sorry to hear about that hit and run. I can definitely help you with that. Can I start with your policy number please?"
+**Agent:** "I am so sorry to hear that. Are you in a safe location and does anyone need emergency medical assistance?"
 
-**Customer:** "Yeah, it's C A R 9 9 9 9 9 9."
+**Customer:** "We are safe now, the ambulance already came and left."
+
+**Agent:** "I'm glad you're safe now. Can I start with the policy number please?"
+
+**Customer:** "Yeah, it's N S 9 9 9 9 9 9 9 9."
 *(Profile will not load. The AI will prompt the agent to double-check the number.)*
 
-**Agent:** "I'm sorry, my system isn't bringing anything up for that number. Did you say C A R 9 9 9 9 9 9? Or is it possible there's a typo?"
+**Agent:** "I'm sorry, my system isn't bringing anything up for that number. Did you say N S 9 9 9 9 9 9 9 9? Or could we try using the phone number on the account?"
 
-**Customer:** "Ah man, this old card is so faded I can't even read it. Can we just use my phone number? It's 987 654 3210."
-*(Profile loads for Rajesh Kumar.)*
+**Customer:** "Oops, that might be his old policy. Let's use his phone number, it's 555 019 8372."
+*(Profile loads for Michael T. Henderson.)*
 
-**Agent:** "Thank you. I see the policy here for the 2023 Hyundai Creta under the name Rajesh Kumar. Am I speaking with Rajesh?"
+**Agent:** "Thank you. I see the policy here for the 2021 Honda Accord under the name Michael T. Henderson. Since you mentioned it's your husband's car, may I ask who I have the pleasure of speaking with?"
 
-**Customer:** "Actually no, I'm his brother, Ravi. I was driving his car when it happened."
-*(The AI should notice the mismatch and suggest clarifying the relationship and ensuring Rajesh knows.)*
+**Customer:** "I'm his wife, Jessica Henderson. I was in the passenger seat when it happened."
+*(The AI should notice the mismatch and suggest confirming she has permission, while also noting the injury mention).*
 
-**Agent:** "Thanks for clarifying, Ravi. Just so I have it for the record, does Rajesh know about the damage, and do you have his permission to file the claim on his behalf?"
+**Agent:** "Thanks for clarifying, Jessica. Does Michael know about the claim, and do you have his permission to file this on his behalf?"
 
-**Customer:** "Yes, he's standing right next to me."
+**Customer:** "Yes, he knows. He's actually the one who was injured."
+*(The AI HIPAA compliance rule should trigger since injury/medical info is being discussed).*
 
-**Agent:** "Perfect. Did you happen to get the license plate or any details of the car that backed into you?"
+**Agent:** "I understand. Please be advised that since we are discussing medical information, it is protected under HIPAA. To stick to what's strictly necessary for the claim, what type of injuries did Michael sustain, and was he transported to a hospital?"
 
-**Customer:** "No, they drove off too fast. I didn't see anything."
+**Customer:** "He had some severe whiplash and was taken to Columbus General Hospital for X-rays."
+*(The AI captures these details and will move toward wrapping up).*
 
-**Agent:** "That's alright. Since this was a hit and run, you'll need to file a police report to proceed with the vandalism claim under Rajesh's comprehensive coverage. Once you have that report, an adjuster will reach out to schedule repairs."
+**Agent:** "Thank you for providing that. I have entered the medical and accident details into our system. Your claim has been filed, and an adjuster will reach out within 24 hours to discuss the next steps for both the vehicle and the medical bills. Is there anything else I can assist you with today?"
 
-**Customer:** "Understood. We will go do that now. Thank you."
+**Customer:** "No, that's everything. We'll wait for the adjuster."
 
 **[⏹ END CALL]**
 
 ---
 
-## 🕊️ Scenario 3: Life Insurance Death Claim (Sensitive Flow)
-**Goal:** Show the AI handling a highly sensitive life insurance claim. It should express condolences just once, verify the caller's identity against the beneficiary list, navigate HIPAA requirements, and carefully collect the date and cause of death without asking to speak to the deceased.
+## 🪟 Scenario 3: Glass Claim & Zero Deductible Info
+**Goal:** Show the AI perfectly extracting facts for a specific type of claim (Glass), using the Knowledge Base to determine replacement criteria, and informing the caller about their $0 deductible and ADAS calibration.
 
-**Data Targeted:** Suresh Menon (`LIFE-200001` - Caller is his son, Anand Menon)
+**Data Targeted:** David Alvez (`NS-77299104` - Has Full Glass Coverage $0 Deductible)
 
 **[🎤 START CALL]**
 
-**Agent:** "Thank you for calling Super Insurance claims. This call is being recorded for quality and training purposes. My name is Alex, how may I assist you?"
+**Agent:** "Thank you for calling National Sentinel Insurance claims. This call is being recorded for quality and compliance purposes. My name is Alex, how may I assist you?"
 
-**Customer:** "Hi Alex... my father passed away recently. I need to start a life insurance claim."
-*(Wait for AI intent to classify as `life_death_claim`. The AI will suggest asking for the policy number.)*
+**Customer:** "Hi Alex, I was driving on the highway and a massive rock flew up and hit my windshield. It created a huge crack."
 
-**Agent:** "I am so incredibly sorry for your loss. I can certainly guide you through this process. Do you happen to have his policy number or phone number?"
+**Agent:** "I am so sorry to hear about that. First, are you in a safe location and is everyone okay?"
 
-**Customer:** "Yes, his policy number is L I F E 2 0 0 0 0 1."
-*(Profile loads for Suresh Menon. The AI sees he is the policyholder and sees his beneficiaries. The AI deduces the caller is a child since they said 'father'. The AI will suggest confirming the caller's name.)*
+**Customer:** "Yeah, it just startled me. I'm safely pulled over now."
 
-**Agent:** "Thank you. I have the policy pulled up for Suresh Menon. For my records to verify against the listed beneficiaries, could I please have your full name?"
+**Agent:** "I'm glad you're safe. Do you have your policy number handy?"
 
-**Customer:** "My name is Anand Menon."
-*(The AI verifies Anand is listed as a 40% beneficiary (Son). The AI HIPAA compliance rule triggers.)*
+**Customer:** "Yes, it is N S 7 7 2 9 9 1 0 4."
+*(Profile loads for David Alvez. AI verifies the account and policy).*
 
-**Agent:** "Thank you, Anand. Please be advised that all medical and personal information discussed is protected under HIPAA. To start the claim, could you provide the date, location, and cause of your father's passing?"
+**Agent:** "Thank you, David. I have your policy open for the 2023 Ford F-150. Based on the damage, would you say the crack in the windshield is larger than a standard dollar bill?"
 
-**Customer:** "He passed away on February 10th at City General Hospital after a severe heart attack."
-*(The AI captures these details. Contestability expired is true, so no contestability warning triggers. The AI suggests closing and next steps based on the KB.)*
+**Customer:** "Oh yeah, it's easily a foot long. It stretches right across my line of sight while driving."
+*(AI uses Knowledge Base rules: larger than a dollar bill + line of sight = Replacement required).*
 
-**Agent:** "Thank you for sharing that information with me. To proceed, we will need a certified copy of the death certificate, a completed claim form, and a copy of your photo ID. I will email the forms to the address on file now. Is there anything else I can do to assist you today?"
+**Agent:** "Because the crack is larger than a dollar bill and in your line of sight, we will need to authorize a full windshield replacement rather than a repair. The good news is, your policy includes Full Glass Coverage, so your deductible for this replacement will be completely waived—it's zero dollars out of pocket for you."
 
-**Customer:** "No, that should be everything for now. Thank you for your help."
-*(AI recognizes the caller needs no further assistance and suggests a definite sign off.)*
+**Customer:** "Wow, that's a relief. How do we get it fixed?"
+*(AI uses Knowledge Base to mention Safelite and ADAS recalibration).*
 
-**Agent:** "You're very welcome, Anand. We are here if you need anything else during this difficult time. Take care and goodbye."
-**[Agent: End Call]**
+**Agent:** "We partner exclusively with Safelite AutoGlass for mobile replacements. They will come to you. And since your Ford F-150 likely has cameras and sensors on the windshield, Safelite will also perform the necessary ADAS recalibration during the appointment, which is fully covered by your claim."
+
+**Customer:** "That's perfect. Do I need to do anything else right now?"
+
+**Agent:** "Nope, I have filed the glass claim for you. A representative from Safelite will contact you shortly to schedule the mobile replacement. Is there anything else I can help you with today?"
+
+**Customer:** "No, that's it. Thanks a lot, Alex."
+
+**[⏹ END CALL]**

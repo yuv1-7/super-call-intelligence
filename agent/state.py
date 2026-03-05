@@ -21,3 +21,6 @@ class AgentState(TypedDict):
     # External system data
     member_data: Optional[dict]
     accumulated_facts: dict
+    
+    # Pre-fetched knowledge (injected into prompt to avoid tool call latency)
+    knowledge_docs: Optional[list]
