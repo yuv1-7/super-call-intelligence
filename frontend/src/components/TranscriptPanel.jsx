@@ -38,7 +38,7 @@ export default function TranscriptPanel({ transcripts, callActive, isListening }
                         <p>
                             {callActive
                                 ? 'Speak into the microphone. The agent should speak first.'
-                                : 'Click "Start Call" to begin listening. Azure Speech will automatically distinguish between Agent and Customer.'}
+                                : 'Click "Start Call" to begin listening. Sarvam AI will transcribe in real-time.'}
                         </p>
                     </div>
                 )}

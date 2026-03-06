@@ -40,7 +40,7 @@ export default function App() {
         resetState,
     } = useWebSocket(WS_URL);
 
-    // Azure Speech callback — sends each utterance to the backend
+    // Sarvam STT callback — sends each utterance to the backend
     const onAzureTranscript = useCallback(
         (event) => {
             sendMessage(event.text, event.isFinal, event.speaker, event.offset);
@@ -48,7 +48,7 @@ export default function App() {
         [sendMessage]
     );
 
-    // Azure Speech hook — token fetched from backend
+    // Sarvam STT hook — streams audio to backend proxy
     const { isListening, error: speechError, toggleListening } = useAzureSpeech({
         onTranscript: onAzureTranscript,
     });
@@ -188,7 +188,7 @@ export default function App() {
                     {/* Speech error toast */}
                     {speechError && (
                         <div className="error-toast">
-                            ⚠️ Azure Speech: {speechError}
+                            ⚠️ Speech Error: {speechError}
                         </div>
                     )}
                 </div>

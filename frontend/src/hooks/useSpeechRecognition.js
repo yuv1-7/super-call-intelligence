@@ -1,49 +1,27 @@
 import { useState, useRef, useCallback } from 'react';
-import * as SpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
 
 /**
- * Custom hook for Azure Speech SDK with real-time transcription
- * and speaker diarization (ConversationTranscriber).
+ * Custom hook for Sarvam AI Saaras V3 real-time transcription.
  *
- * Uses a short-lived token fetched from the backend (/api/speech-token)
- * so the API key never touches the browser.
+ * Captures mic + system audio, mixes them, converts to PCM s16le 16kHz,
+ * and streams raw audio to the backend WebSocket proxy (/sarvam-stream).
+ * The backend forwards audio to Sarvam's API and relays transcripts back.
  */
 export function useAzureSpeech({ onTranscript }) {
     const [isListening, setIsListening] = useState(false);
     const [error, setError] = useState(null);
-    const transcriberRef = useRef(null);
-
-    const fetchToken = async () => {
-        const baseUrl = import.meta.env.DEV
-            ? `http://${window.location.hostname}:8000`
-            : '';
-        const res = await fetch(`${baseUrl}/api/speech-token`);
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        return data; // { token, region }
-    };
+    const sessionRef = useRef(null);
 
     const startListening = useCallback(async () => {
         try {
             setError(null);
-            const { token, region } = await fetchToken();
-
-            const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
-            speechConfig.speechRecognitionLanguage = 'en-IN'; // Phonetic English — Hindi/Punjabi words come out Romanized
-
-            // Tuning timeouts: 700ms to ensure diarization has enough silence context
-            speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "700");
-            speechConfig.setProperty(SpeechSDK.PropertyId.Speech_SegmentationSilenceTimeoutMs, "700");
-
-            // Prioritize latency over accuracy processing to reduce the "lag" feeling
-            speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceResponse_PostProcessingOption, "TrueText");
-            speechConfig.outputFormat = SpeechSDK.OutputFormat.Simple;
             let displayStream;
             let micStream;
             let audioContext;
-            let transcriber;
+            let sarvamWs;
 
             try {
+                // Capture system audio via screen share
                 displayStream = await navigator.mediaDevices.getDisplayMedia({
                     video: true,
                     audio: {
@@ -55,7 +33,7 @@ export function useAzureSpeech({ onTranscript }) {
 
                 if (displayStream.getAudioTracks().length === 0) {
                     displayStream.getTracks().forEach((track) => track.stop());
-                    throw new Error("Firefox doesn't support sharing system audio from the 'Entire Screen' option natively. Please use Chrome/Edge for this demo, or use a Virtual Audio Cable in Firefox.");
+                    throw new Error("No system audio detected. Please share a tab or window with audio, or use Chrome/Edge.");
                 }
 
                 // Capture user's microphone
@@ -64,27 +42,106 @@ export function useAzureSpeech({ onTranscript }) {
                     video: false
                 });
 
-                // Mix the two audio streams using Web Audio API
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                // Mix the two audio streams using Web Audio API at 16kHz for Sarvam
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
                 const displaySource = audioContext.createMediaStreamSource(displayStream);
                 const micSource = audioContext.createMediaStreamSource(micStream);
-                const destination = audioContext.createMediaStreamDestination();
 
-                displaySource.connect(destination);
-                micSource.connect(destination);
+                // Use ScriptProcessorNode to capture raw PCM audio
+                // Buffer size of 4096 at 16kHz = ~256ms chunks
+                const processor = audioContext.createScriptProcessor(4096, 1, 1);
+                const merger = audioContext.createChannelMerger(2);
 
-                // Use the mixed stream for transcription
-                const mixedStream = destination.stream;
+                displaySource.connect(merger, 0, 0);
+                micSource.connect(merger, 0, 0);
+                merger.connect(processor);
+                processor.connect(audioContext.destination);
 
-                const audioConfig = SpeechSDK.AudioConfig.fromStreamInput(mixedStream);
+                // Connect to backend Sarvam proxy WebSocket
+                const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsHost = import.meta.env.DEV
+                    ? `${window.location.hostname}:8000`
+                    : window.location.host;
+                sarvamWs = new WebSocket(`${wsProtocol}//${wsHost}/sarvam-stream`);
 
-                // Standard constructor — keeps diarization 100% reliable
-                transcriber = new SpeechSDK.ConversationTranscriber(speechConfig, audioConfig);
+                // Fallback offset counter (backend provides utterance_id)
+                let utteranceOffset = 0;
+
+                // Handle incoming transcripts from Sarvam via backend
+                sarvamWs.onmessage = (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        console.log('🔍 Sarvam WS raw message:', JSON.stringify(msg).slice(0, 300));
+
+                        // Backend sends: {type: 'transcript', text, is_final, speaker_id, language_code, utterance_id}
+                        // Key: ALL Sarvam data messages are FINAL (no partials).
+                        // utterance_id is a monotonic counter from the backend for unique de-duplication.
+                        if (msg.type === 'transcript' && msg.text) {
+                            const transcriptEvent = {
+                                text: msg.text,
+                                speaker: msg.speaker_id || 'Speaker',
+                                isFinal: true,  // Sarvam only sends finals
+                                offset: (msg.utterance_id || utteranceOffset++) * 10000,
+                                duration: 0,
+                            };
+                            console.log('📝 Sending to onTranscript:', transcriptEvent);
+                            onTranscript?.(transcriptEvent);
+                        } else if (msg.type === 'vad') {
+                            // VAD signals from Sarvam (start_speech / end_speech)
+                            console.log(`🔊 VAD: ${msg.signal}`);
+                        } else if (msg.type === 'error') {
+                            console.error('Sarvam STT error:', msg.text || msg.data);
+                            setError(msg.text || 'Sarvam STT error');
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse Sarvam message:', e);
+                    }
+                };
+
+                sarvamWs.onerror = (err) => {
+                    console.error('Sarvam WebSocket error:', err);
+                    setError('Connection to Sarvam STT failed');
+                };
+
+                sarvamWs.onclose = () => {
+                    console.log('🎙️ Sarvam STT: WebSocket closed');
+                };
+
+                // Wait for WebSocket to open before sending audio
+                await new Promise((resolve, reject) => {
+                    sarvamWs.onopen = () => {
+                        console.log('🎙️ Sarvam STT: connected to backend proxy');
+                        resolve();
+                    };
+                    const origOnError = sarvamWs.onerror;
+                    sarvamWs.onerror = (err) => {
+                        origOnError?.(err);
+                        reject(new Error('Failed to connect to Sarvam STT backend'));
+                    };
+                    setTimeout(() => reject(new Error('Sarvam STT connection timeout')), 10000);
+                });
+
+                // Stream raw PCM audio to the backend
+                processor.onaudioprocess = (e) => {
+                    if (sarvamWs.readyState !== WebSocket.OPEN) return;
+
+                    const float32Data = e.inputBuffer.getChannelData(0);
+
+                    // Convert float32 [-1, 1] to int16 [-32768, 32767] (PCM s16le)
+                    const int16Data = new Int16Array(float32Data.length);
+                    for (let i = 0; i < float32Data.length; i++) {
+                        const s = Math.max(-1, Math.min(1, float32Data[i]));
+                        int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+
+                    sarvamWs.send(int16Data.buffer);
+                };
 
             } catch (err) {
                 if (displayStream) displayStream.getTracks().forEach((track) => track.stop());
                 if (micStream) micStream.getTracks().forEach((track) => track.stop());
                 if (audioContext && audioContext.state !== 'closed') audioContext.close();
+                if (sarvamWs && sarvamWs.readyState === WebSocket.OPEN) sarvamWs.close();
 
                 if (err.name === 'NotAllowedError') {
                     throw new Error("Screen sharing or microphone was denied. " + err.message);
@@ -93,93 +150,36 @@ export function useAzureSpeech({ onTranscript }) {
             }
 
             // Store everything in the ref so we can clean up later
-            transcriberRef.current = {
-                transcriber,
+            sessionRef.current = {
+                sarvamWs,
                 displayStream,
                 micStream,
-                audioContext
+                audioContext,
             };
 
-            // ─── Interim results (partial) ─── //
-            transcriber.transcribing = (s, e) => {
-                if (e.result.reason === SpeechSDK.ResultReason.RecognizingSpeech) {
-                    onTranscript?.({
-                        text: e.result.text,
-                        speaker: e.result.speakerId || 'Unknown',
-                        isFinal: false,
-                        offset: e.result.offset,
-                        duration: e.result.duration,
-                    });
-                }
-            };
+            setIsListening(true);
+            console.log('🎙️ Sarvam STT: transcription started');
 
-            // ─── Final results ─── //
-            transcriber.transcribed = (s, e) => {
-                if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech && e.result.text) {
-                    onTranscript?.({
-                        text: e.result.text,
-                        speaker: e.result.speakerId || 'Unknown',
-                        isFinal: true,
-                        offset: e.result.offset,
-                        duration: e.result.duration,
-                    });
-                }
-            };
-
-            transcriber.canceled = (s, e) => {
-                if (e.reason === SpeechSDK.CancellationReason.Error) {
-                    console.error('Azure Speech error:', e.errorDetails);
-                    setError(e.errorDetails);
-                }
-                setIsListening(false);
-            };
-
-            transcriber.sessionStopped = () => {
-                setIsListening(false);
-            };
-
-            await new Promise((resolve, reject) => {
-                transcriber.startTranscribingAsync(
-                    () => {
-                        setIsListening(true);
-                        console.log('🎙️ Azure Speech: transcription started with system audio share');
-                        resolve();
-                    },
-                    (err) => {
-                        console.error('Failed to start Azure Speech:', err);
-                        setError(String(err));
-                        reject(err);
-                    }
-                );
-            });
-
-            // Remove the redundant transcriberRef assignment
         } catch (err) {
-            console.error('Azure Speech init error:', err);
+            console.error('Sarvam STT init error:', err);
             setError(err.message || String(err));
         }
     }, [onTranscript]);
 
     const stopListening = useCallback(() => {
-        if (transcriberRef.current) {
-            const { transcriber, displayStream, micStream, audioContext } = transcriberRef.current;
+        if (sessionRef.current) {
+            const { sarvamWs, displayStream, micStream, audioContext } = sessionRef.current;
 
-            if (transcriber) {
-                transcriber.stopTranscribingAsync(
-                    () => {
-                        console.log('🎙️ Azure Speech: transcription stopped');
-                        transcriber.close();
-                    },
-                    (err) => console.error('Error stopping transcription:', err)
-                );
+            if (sarvamWs && sarvamWs.readyState === WebSocket.OPEN) {
+                sarvamWs.close();
+                console.log('🎙️ Sarvam STT: transcription stopped');
             }
 
-            // Clean up custom streams and audio context
             if (displayStream) displayStream.getTracks().forEach(track => track.stop());
             if (micStream) micStream.getTracks().forEach(track => track.stop());
             if (audioContext && audioContext.state !== 'closed') audioContext.close();
 
-            transcriberRef.current = null;
+            sessionRef.current = null;
         }
         setIsListening(false);
     }, []);

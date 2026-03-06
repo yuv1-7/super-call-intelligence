@@ -44,6 +44,7 @@ export function useWebSocket(url) {
         ws.onmessage = (event) => {
             try {
                 const msg = JSON.parse(event.data);
+                console.log('📨 /stream WS received:', msg.type, msg.data?.text?.slice(0, 60) || JSON.stringify(msg.data).slice(0, 80));
                 handleMessage(msg);
             } catch (e) {
                 console.error('Failed to parse WS message:', e);
@@ -139,12 +140,15 @@ export function useWebSocket(url) {
 
     const sendMessage = useCallback((text, isFinalized = true, speaker = 'Unknown', offset = 0) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
+            console.log('📤 sendMessage:', { text: text.slice(0, 60), isFinalized, speaker, offset });
             wsRef.current.send(JSON.stringify({
                 text,
                 is_finalized: isFinalized,
                 speaker,
                 offset,
             }));
+        } else {
+            console.warn('⚠️ sendMessage: WebSocket not open, state:', wsRef.current?.readyState);
         }
     }, []);
 

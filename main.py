@@ -56,50 +56,203 @@ app.add_middleware(
 POLICY_REGEX = re.compile(r"\b(CAR|LIFE)[-\s]?(\d{4,})\b", re.IGNORECASE)
 
 
+# ─── Helper functions ─── #
+def _map_speaker(speaker_id: str) -> str:
+    """Map diarization speaker IDs to human-readable labels.
+
+    Handles Sarvam IDs (SPEAKER_00, SPEAKER_01, ...) and
+    old Azure-style IDs (Guest-1, Guest-2, ...).
+    """
+    if not speaker_id or speaker_id == "Unknown":
+        return "Speaker"
+    mapping = {
+        "Guest-1": "Agent",
+        "Guest-2": "Customer",
+        "SPEAKER_00": "Agent",
+        "SPEAKER_01": "Customer",
+    }
+    return mapping.get(speaker_id, speaker_id)
+
+
+def _format_timestamp(offset_ticks: int) -> str:
+    """Convert offset (in 100-nanosecond ticks or ms*10000) to HH:MM:SS format."""
+    if not offset_ticks:
+        return "00:00:00"
+    total_seconds = offset_ticks / 10_000_000  # 100ns ticks -> seconds
+    hours = int(total_seconds // 3600)
+    minutes = int((total_seconds % 3600) // 60)
+    seconds = int(total_seconds % 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
 # ─── Health check ─── #
 @app.get("/health")
 async def health():
     return {"status": "ok", "graph_ready": graph is not None}
 
 
-# ─── Azure Speech Token Endpoint ─── #
-# The frontend fetches a short-lived token from here instead of holding the key
+# ─── Sarvam AI Real-Time STT WebSocket Proxy ─── #
+# Based on official examples: github.com/sarvamai/sarvam-streaming-apis
 import os
-import httpx
+import base64
+import websockets
+from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 
-@app.get("/api/speech-token")
-async def get_speech_token():
-    """
-    Issue a short-lived Azure Speech authorization token.
-    The token is valid for 10 minutes. The frontend uses this token
-    with SpeechConfig.fromAuthorizationToken() so the API key never
-    leaves the server.
-    """
-    speech_key = os.getenv("AZURE_SPEECH_KEY", "")
-    speech_region = os.getenv("AZURE_SPEECH_REGION", "eastus")
+SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
 
-    if not speech_key:
-        return {"error": "AZURE_SPEECH_KEY not configured on the server"}, 500
 
-    token_url = f"https://{speech_region}.api.cognitive.microsoft.com/sts/v1.0/issueToken"
+@app.websocket("/sarvam-stream")
+async def sarvam_stream(websocket: WebSocket):
+    """WebSocket proxy: Browser → Backend → Sarvam AI STT → Backend → Browser."""
+    await websocket.accept()
+    logger.info("🎙️ Sarvam STT: client connected")
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            token_url,
-            headers={
-                "Ocp-Apim-Subscription-Key": speech_key,
-                "Content-Length": "0",
-            },
+    if not SARVAM_API_KEY or SARVAM_API_KEY == "your_sarvam_api_key_here":
+        await websocket.send_json({"type": "error", "text": "SARVAM_API_KEY not configured"})
+        await websocket.close()
+        return
+
+    logger.info(f"🎙️ Sarvam STT: API key loaded ({SARVAM_API_KEY[:8]}...)")
+
+    # ── Sarvam V3 streaming WebSocket ──
+    # Ref: sarvamai SDK v0.1.25 speech_to_text_streaming/client.py
+    # with_diarization & num_speakers: SDK response model supports diarized_transcript
+    # but connect() doesn't expose these params yet. Passing them as URL query params
+    # since the API server may accept them (batch API equivalent: with_diarization=True).
+    sarvam_url = (
+        f"wss://api.sarvam.ai/speech-to-text/ws"
+        f"?language-code=unknown"
+        f"&model=saaras:v3"
+        f"&mode=translit"
+        f"&with_diarization=true"
+        f"&num_speakers=2"
+    )
+
+    logger.info(f"🎙️ Sarvam STT: connecting to {sarvam_url}")
+
+    sarvam_ws = None
+    utterance_counter = 0  # Monotonically increasing offset for unique utterance IDs
+    try:
+        sarvam_ws = await websockets.connect(
+            sarvam_url,
+            additional_headers={"api-subscription-key": SARVAM_API_KEY},
         )
+        logger.info("🎙️ Sarvam STT: connected to Sarvam API ✅")
 
-    if response.status_code == 200:
-        return {
-            "token": response.text,
-            "region": speech_region,
-        }
-    else:
-        logger.error(f"Failed to fetch speech token: {response.status_code} {response.text}")
-        return {"error": "Failed to fetch speech token"}, 500
+        async def relay_sarvam_to_client():
+            """Read messages from Sarvam and forward to browser.
+
+            Key insight from Pipecat source & SDK: ALL Sarvam 'data' messages
+            are FINAL utterances — there are no partial/interim results.
+            The API also sends 'events' messages for VAD signals.
+            """
+            nonlocal utterance_counter
+            try:
+                async for msg in sarvam_ws:
+                    try:
+                        parsed = json.loads(msg) if isinstance(msg, str) else msg
+                        msg_type = parsed.get("type", "")
+
+                        # Log full response for debugging diarization
+                        logger.info(f"🔍 Sarvam raw response: type={msg_type}, keys={list(parsed.get('data', {}).keys()) if isinstance(parsed.get('data'), dict) else 'N/A'}")
+
+                        if msg_type == "data" and parsed.get("data"):
+                            data = parsed["data"]
+                            transcript = data.get("transcript", "")
+
+                            if transcript and transcript.strip():
+                                # Extract speaker from diarized_transcript if available
+                                # SDK model: DiarizedTranscript has entries: List[DiarizedEntry]
+                                # DiarizedEntry: {transcript, speaker_id, start_time_seconds, end_time_seconds}
+                                speaker_id = None
+                                diarized = data.get("diarized_transcript")
+                                logger.info(f"🎯 diarized_transcript value: {json.dumps(diarized) if diarized else 'None/empty'}")
+                                if diarized and isinstance(diarized, dict):
+                                    # diarized_transcript may be {entries: [{speaker_id, transcript, ...}]}
+                                    entries = diarized.get("entries")
+                                    if entries and isinstance(entries, list) and len(entries) > 0:
+                                        # Use the speaker_id from the first (or majority) entry
+                                        speaker_id = entries[0].get("speaker_id")
+
+                                # All Sarvam data messages are final (no partials)
+                                utterance_counter += 1
+                                await websocket.send_json({
+                                    "type": "transcript",
+                                    "text": transcript,
+                                    "is_final": True,
+                                    "speaker_id": speaker_id,
+                                    "language_code": data.get("language_code", "unknown"),
+                                    "utterance_id": utterance_counter,
+                                })
+
+                                logger.info(
+                                    f"📝 FINAL #{utterance_counter} "
+                                    f"[speaker={speaker_id or 'unknown'}]: "
+                                    f"{transcript[:100]}"
+                                )
+
+                        elif msg_type == "events" and parsed.get("data"):
+                            # VAD signals: START_SPEECH / END_SPEECH
+                            signal = parsed["data"].get("signal_type", "")
+                            logger.info(f"🔊 VAD signal: {signal}")
+                            await websocket.send_json({
+                                "type": "vad",
+                                "signal": signal.lower(),
+                            })
+
+                        else:
+                            # Forward errors etc.
+                            await websocket.send_json(parsed)
+
+                    except json.JSONDecodeError:
+                        logger.warning(f"Sarvam non-JSON: {str(msg)[:100]}")
+            except ConnectionClosedOK:
+                logger.info("Sarvam STT: connection closed OK")
+            except ConnectionClosed as e:
+                logger.info(f"Sarvam STT: connection closed ({e.code})")
+            except Exception as e:
+                logger.error(f"Sarvam relay error: {e}", exc_info=True)
+
+        # Start the relay task in the background
+        relay_task = asyncio.create_task(relay_sarvam_to_client())
+
+        # Read audio chunks from browser and forward to Sarvam
+        # Audio format: raw PCM s16le 16kHz mono, base64-encoded
+        chunk_count = 0
+        try:
+            while True:
+                try:
+                    raw_audio = await websocket.receive_bytes()
+                except WebSocketDisconnect:
+                    break
+
+                chunk_count += 1
+                audio_b64 = base64.b64encode(raw_audio).decode("utf-8")
+                await sarvam_ws.send(json.dumps({
+                    "audio": {
+                        "data": audio_b64,
+                        "sample_rate": 16000,
+                        "encoding": "audio/wav",
+                    }
+                }))
+                if chunk_count <= 3 or chunk_count % 50 == 0:
+                    logger.info(f"Sent chunk #{chunk_count} ({len(raw_audio)} bytes)")
+        finally:
+            relay_task.cancel()
+
+    except Exception as e:
+        logger.error(f"🎙️ Sarvam STT error: {e}", exc_info=True)
+        try:
+            await websocket.send_json({"type": "error", "text": str(e)})
+        except Exception:
+            pass
+    finally:
+        if sarvam_ws:
+            try:
+                await sarvam_ws.close()
+            except Exception:
+                pass
+        logger.info(f"Sarvam STT: client disconnected (sent {chunk_count if 'chunk_count' in dir() else '?'} chunks)")
 
 
 
@@ -380,25 +533,7 @@ async def stream_endpoint(websocket: WebSocket):
             pass
 
 
-def _map_speaker(speaker_id: str) -> str:
-    """Map Azure diarization speaker IDs to human-readable labels."""
-    mapping = {
-        "Guest-1": "Agent",
-        "Guest-2": "Customer",
-        "Unknown": "Speaker",
-    }
-    return mapping.get(speaker_id, f"Speaker {speaker_id}")
-
-
-def _format_timestamp(offset_ticks: int) -> str:
-    """Convert Azure Speech offset (in 100-nanosecond ticks) to HH:MM:SS format."""
-    if not offset_ticks:
-        return "00:00:00"
-    total_seconds = offset_ticks / 10_000_000
-    hours = int(total_seconds // 3600)
-    minutes = int((total_seconds % 3600) // 60)
-    seconds = int(total_seconds % 60)
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+# _map_speaker and _format_timestamp are defined above (near line 60)
 
 
 # ─── Serve frontend static files (production) ─── #
