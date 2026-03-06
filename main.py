@@ -62,44 +62,27 @@ async def health():
     return {"status": "ok", "graph_ready": graph is not None}
 
 
-# ─── Azure Speech Token Endpoint ─── #
-# The frontend fetches a short-lived token from here instead of holding the key
+# ─── Deepgram Token Endpoint ─── #
+# The frontend fetches a short-lived JWT from here so the API key never leaves the server
 import os
 import httpx
 
-@app.get("/api/speech-token")
-async def get_speech_token():
+@app.get("/api/deepgram-token")
+async def get_deepgram_token():
     """
-    Issue a short-lived Azure Speech authorization token.
-    The token is valid for 10 minutes. The frontend uses this token
-    with SpeechConfig.fromAuthorizationToken() so the API key never
-    leaves the server.
+    Return the Deepgram API key for the frontend to connect directly
+    to Deepgram's WebSocket API. The key is stored server-side in .env
+    and never hardcoded in the frontend code.
+    
+    Note: For production, consider using Deepgram's /v1/auth/grant 
+    endpoint to issue short-lived JWTs (requires admin-scoped API key).
     """
-    speech_key = os.getenv("AZURE_SPEECH_KEY", "")
-    speech_region = os.getenv("AZURE_SPEECH_REGION", "eastus")
+    deepgram_key = os.getenv("DEEPGRAM_API_KEY", "")
 
-    if not speech_key:
-        return {"error": "AZURE_SPEECH_KEY not configured on the server"}, 500
+    if not deepgram_key:
+        return {"error": "DEEPGRAM_API_KEY not configured on the server"}, 500
 
-    token_url = f"https://{speech_region}.api.cognitive.microsoft.com/sts/v1.0/issueToken"
-
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            token_url,
-            headers={
-                "Ocp-Apim-Subscription-Key": speech_key,
-                "Content-Length": "0",
-            },
-        )
-
-    if response.status_code == 200:
-        return {
-            "token": response.text,
-            "region": speech_region,
-        }
-    else:
-        logger.error(f"Failed to fetch speech token: {response.status_code} {response.text}")
-        return {"error": "Failed to fetch speech token"}, 500
+    return {"token": deepgram_key}
 
 
 
@@ -186,7 +169,7 @@ async def stream_endpoint(websocket: WebSocket):
             if not text.strip():
                 continue
 
-            # Map Azure diarization speaker IDs to roles
+            # Map Deepgram diarization speaker IDs to roles
             speaker_label = _map_speaker(speaker)
 
             logger.info(
@@ -380,25 +363,42 @@ async def stream_endpoint(websocket: WebSocket):
             pass
 
 
-def _map_speaker(speaker_id: str) -> str:
-    """Map Azure diarization speaker IDs to human-readable labels."""
-    mapping = {
+def _map_speaker(speaker_id) -> str:
+    """Map Deepgram diarization speaker IDs to human-readable labels.
+    
+    Deepgram returns integer speaker IDs (0, 1, 2, ...) in the words array.
+    Speaker 0 is mapped to 'Agent', Speaker 1 to 'Customer'.
+    """
+    # Handle Deepgram numeric IDs
+    if isinstance(speaker_id, int):
+        mapping = {0: "Agent", 1: "Customer"}
+        return mapping.get(speaker_id, f"Speaker {speaker_id}")
+    # Handle string IDs (legacy Azure or frontend-sent)
+    string_mapping = {
         "Guest-1": "Agent",
         "Guest-2": "Customer",
+        "0": "Agent",
+        "1": "Customer",
         "Unknown": "Speaker",
     }
-    return mapping.get(speaker_id, f"Speaker {speaker_id}")
+    return string_mapping.get(str(speaker_id), f"Speaker {speaker_id}")
 
 
-def _format_timestamp(offset_ticks: int) -> str:
-    """Convert Azure Speech offset (in 100-nanosecond ticks) to HH:MM:SS format."""
-    if not offset_ticks:
+def _format_timestamp(seconds_value) -> str:
+    """Convert Deepgram start time (seconds as float) to HH:MM:SS format.
+    
+    Also handles legacy Azure tick format (large integers > 10000) for backward compatibility.
+    """
+    if not seconds_value:
         return "00:00:00"
-    total_seconds = offset_ticks / 10_000_000
+    total_seconds = float(seconds_value)
+    # Legacy Azure tick detection: values > 10000 are likely 100-nanosecond ticks
+    if total_seconds > 10000:
+        total_seconds = total_seconds / 10_000_000
     hours = int(total_seconds // 3600)
     minutes = int((total_seconds % 3600) // 60)
-    seconds = int(total_seconds % 60)
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    secs = int(total_seconds % 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
 # ─── Serve frontend static files (production) ─── #

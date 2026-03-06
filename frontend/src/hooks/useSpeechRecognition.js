@@ -1,56 +1,86 @@
 import { useState, useRef, useCallback } from 'react';
-import * as SpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
 
 /**
- * Custom hook for Azure Speech SDK with real-time transcription
- * and speaker diarization (ConversationTranscriber).
- *
- * Uses a short-lived token fetched from the backend (/api/speech-token)
- * so the API key never touches the browser.
+ * Custom hook for Deepgram real-time transcription with speaker diarization.
+ * 
+ * Connects directly to Deepgram's WebSocket API from the browser using a
+ * short-lived JWT token fetched from the backend. Uses AudioWorklet for
+ * off-main-thread PCM extraction (16-bit, 16kHz mono).
+ * 
+ * Supports Hindi + English + Hinglish (code-switching) via language=multi
+ * with the Nova-3 model, and real-time speaker diarization.
  */
-export function useAzureSpeech({ onTranscript }) {
+export function useDeepgramSpeech({ onTranscript }) {
     const [isListening, setIsListening] = useState(false);
     const [error, setError] = useState(null);
-    const transcriberRef = useRef(null);
+    const sessionRef = useRef(null);
+    // Track the last known speaker across utterances for interim results
+    // that may not have diarization data yet
+    const lastSpeakerRef = useRef(0);
 
     const fetchToken = async () => {
         const baseUrl = import.meta.env.DEV
             ? `http://${window.location.hostname}:8000`
             : '';
-        const res = await fetch(`${baseUrl}/api/speech-token`);
+        const res = await fetch(`${baseUrl}/api/deepgram-token`);
         const data = await res.json();
         if (data.error) throw new Error(data.error);
-        return data; // { token, region }
+        return data.token;
+    };
+
+    /**
+     * Determine the dominant speaker for a Deepgram utterance.
+     * Each word in a finalized result has a `speaker` field (integer).
+     * For interim results, words may lack speaker data — we fall back
+     * to the last known speaker from a previous finalized result.
+     */
+    const getDominantSpeaker = (words, isFinal) => {
+        if (!words || words.length === 0) return lastSpeakerRef.current;
+
+        // Check if any word actually has speaker info
+        const wordsWithSpeaker = words.filter(w => w.speaker !== undefined && w.speaker !== null);
+
+        if (wordsWithSpeaker.length === 0) {
+            // No diarization data (common in interim results) — use last known speaker
+            return lastSpeakerRef.current;
+        }
+
+        // Count speaker occurrences
+        const counts = {};
+        for (const w of wordsWithSpeaker) {
+            const s = w.speaker;
+            counts[s] = (counts[s] || 0) + 1;
+        }
+
+        let dominant = lastSpeakerRef.current;
+        let maxCount = 0;
+        for (const [speaker, count] of Object.entries(counts)) {
+            if (count > maxCount) {
+                maxCount = count;
+                dominant = Number(speaker);
+            }
+        }
+
+        // Update last known speaker when we get finalized results
+        if (isFinal) {
+            lastSpeakerRef.current = dominant;
+        }
+
+        return dominant;
     };
 
     const startListening = useCallback(async () => {
         try {
             setError(null);
-            const { token, region } = await fetchToken();
+            lastSpeakerRef.current = 0; // Reset speaker tracking for new session
 
-            const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
+            // 1. Fetch short-lived token from backend
+            const token = await fetchToken();
 
-            // Set up auto-language detection for Hindi and Indian English. 
-            // Note: pa-IN crashes ConversationTranscriber diarization, so it is handled phonetically.
-            const autoDetectSourceLanguageConfig = SpeechSDK.AutoDetectSourceLanguageConfig.fromLanguages([
-                "en-IN",
-                "hi-IN"
-            ]);
-
-            // Enable continuous language identification
-            speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous");
-
-            // Tuning timeouts: restored to 700ms to ensure diarization has enough silence context
-            speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "700");
-            speechConfig.setProperty(SpeechSDK.PropertyId.Speech_SegmentationSilenceTimeoutMs, "700");
-
-            // Prioritize latency over accuracy processing to reduce the "lag" feeling
-            speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceResponse_PostProcessingOption, "TrueText");
-            speechConfig.outputFormat = SpeechSDK.OutputFormat.Simple;
+            // 2. Capture system audio (screen share) + microphone
             let displayStream;
             let micStream;
             let audioContext;
-            let transcriber;
 
             try {
                 displayStream = await navigator.mediaDevices.getDisplayMedia({
@@ -64,131 +94,173 @@ export function useAzureSpeech({ onTranscript }) {
 
                 if (displayStream.getAudioTracks().length === 0) {
                     displayStream.getTracks().forEach((track) => track.stop());
-                    throw new Error("Firefox doesn't support sharing system audio from the 'Entire Screen' option natively. Please use Chrome/Edge for this demo, or use a Virtual Audio Cable in Firefox.");
+                    throw new Error(
+                        "Your browser doesn't support sharing system audio from this source. " +
+                        "Please use Chrome/Edge and select a tab or window with audio."
+                    );
                 }
 
-                // Capture user's microphone
                 micStream = await navigator.mediaDevices.getUserMedia({
                     audio: true,
                     video: false
                 });
 
-                // Mix the two audio streams using Web Audio API
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                // 3. Mix the two audio streams using Web Audio API
+                // Use native sample rate — AudioWorklet handles downsampling to 16kHz
+                audioContext = new AudioContext();
                 const displaySource = audioContext.createMediaStreamSource(displayStream);
                 const micSource = audioContext.createMediaStreamSource(micStream);
-                const destination = audioContext.createMediaStreamDestination();
 
-                displaySource.connect(destination);
-                micSource.connect(destination);
+                // 4. Load AudioWorklet for off-main-thread PCM extraction
+                await audioContext.audioWorklet.addModule('/pcm-processor.js');
+                const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
 
-                // Use the mixed stream for transcription
-                const mixedStream = destination.stream;
+                // Connect both sources → worklet
+                displaySource.connect(workletNode);
+                micSource.connect(workletNode);
+                // Don't connect to destination — we don't want to play the audio back
 
-                const audioConfig = SpeechSDK.AudioConfig.fromStreamInput(mixedStream);
+                // 5. Open WebSocket directly to Deepgram
+                const dgParams = new URLSearchParams({
+                    model: 'nova-3',
+                    language: 'multi',
+                    diarize: 'true',
+                    smart_format: 'true',
+                    interim_results: 'true',
+                    endpointing: '700',
+                    encoding: 'linear16',
+                    sample_rate: '16000',
+                    channels: '1',
+                });
 
-                // Use FromConfig constructor to combine Diarization with Language Detection
-                transcriber = SpeechSDK.ConversationTranscriber.FromConfig(speechConfig, autoDetectSourceLanguageConfig, audioConfig);
+                const dgUrl = `wss://api.deepgram.com/v1/listen?${dgParams.toString()}`;
+
+                const dgSocket = new WebSocket(dgUrl, ['token', token]);
+
+                // Store session for cleanup
+                sessionRef.current = {
+                    dgSocket,
+                    displayStream,
+                    micStream,
+                    audioContext,
+                    workletNode,
+                };
+
+                // 6. Wire up events
+                dgSocket.onopen = () => {
+                    console.log('🎙️ Deepgram: WebSocket connected');
+                    setIsListening(true);
+
+                    // Route PCM data from AudioWorklet → Deepgram WebSocket
+                    workletNode.port.onmessage = (event) => {
+                        if (dgSocket.readyState === WebSocket.OPEN) {
+                            dgSocket.send(event.data);
+                        }
+                    };
+                };
+
+                dgSocket.onmessage = (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+
+                        if (msg.type === 'Results') {
+                            const alt = msg.channel?.alternatives?.[0];
+                            if (!alt || !alt.transcript) return;
+
+                            const text = alt.transcript;
+                            const words = alt.words || [];
+                            const isFinal = msg.is_final === true;
+                            const start = msg.start || 0;
+
+                            // Debug: log raw speaker data from Deepgram
+                            if (isFinal && words.length > 0) {
+                                const speakerIds = words.map(w => w.speaker);
+                                const uniqueSpeakers = [...new Set(speakerIds)];
+                                console.log(
+                                    `🔍 Deepgram raw diarization — speakers: [${uniqueSpeakers.join(',')}], ` +
+                                    `word count: ${words.length}, text: "${text.slice(0, 50)}"`
+                                );
+                            }
+
+                            const speaker = getDominantSpeaker(words, isFinal);
+
+                            // Round offset to 2 decimal places for stable deduplication
+                            // between interim and final results
+                            const stableOffset = Math.round(start * 100) / 100;
+
+                            console.log(
+                                `${isFinal ? '📝 FINAL' : '💬 Partial'} [Speaker ${speaker}]: ${text.slice(0, 60)}`
+                            );
+
+                            onTranscript?.({
+                                text,
+                                speaker: String(speaker),
+                                isFinal,
+                                offset: stableOffset,
+                            });
+                        }
+                    } catch (err) {
+                        console.error('Deepgram message parse error:', err);
+                    }
+                };
+
+                dgSocket.onerror = (event) => {
+                    console.error('Deepgram WebSocket error:', event);
+                    setError('Deepgram connection error. Check your API key and network.');
+                };
+
+                dgSocket.onclose = (event) => {
+                    console.log(`🎙️ Deepgram: WebSocket closed (code=${event.code}, reason=${event.reason})`);
+                    if (event.code !== 1000 && event.code !== 1005) {
+                        setError(`Deepgram disconnected unexpectedly (code: ${event.code})`);
+                    }
+                    setIsListening(false);
+                };
+
+                // Stop listening if user stops screen share
+                displayStream.getVideoTracks()[0]?.addEventListener('ended', () => {
+                    stopListening();
+                });
 
             } catch (err) {
+                // Cleanup on setup failure
                 if (displayStream) displayStream.getTracks().forEach((track) => track.stop());
                 if (micStream) micStream.getTracks().forEach((track) => track.stop());
                 if (audioContext && audioContext.state !== 'closed') audioContext.close();
 
                 if (err.name === 'NotAllowedError') {
-                    throw new Error("Screen sharing or microphone was denied. " + err.message);
+                    throw new Error('Screen sharing or microphone was denied. ' + err.message);
                 }
                 throw err;
             }
-
-            // Store everything in the ref so we can clean up later
-            transcriberRef.current = {
-                transcriber,
-                displayStream,
-                micStream,
-                audioContext
-            };
-
-            // ─── Interim results (partial) ─── //
-            transcriber.transcribing = (s, e) => {
-                if (e.result.reason === SpeechSDK.ResultReason.RecognizingSpeech) {
-                    onTranscript?.({
-                        text: e.result.text,
-                        speaker: e.result.speakerId || 'Unknown',
-                        isFinal: false,
-                        offset: e.result.offset,
-                        duration: e.result.duration,
-                    });
-                }
-            };
-
-            // ─── Final results ─── //
-            transcriber.transcribed = (s, e) => {
-                if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech && e.result.text) {
-                    onTranscript?.({
-                        text: e.result.text,
-                        speaker: e.result.speakerId || 'Unknown',
-                        isFinal: true,
-                        offset: e.result.offset,
-                        duration: e.result.duration,
-                    });
-                }
-            };
-
-            transcriber.canceled = (s, e) => {
-                if (e.reason === SpeechSDK.CancellationReason.Error) {
-                    console.error('Azure Speech error:', e.errorDetails);
-                    setError(e.errorDetails);
-                }
-                setIsListening(false);
-            };
-
-            transcriber.sessionStopped = () => {
-                setIsListening(false);
-            };
-
-            await new Promise((resolve, reject) => {
-                transcriber.startTranscribingAsync(
-                    () => {
-                        setIsListening(true);
-                        console.log('🎙️ Azure Speech: transcription started with system audio share');
-                        resolve();
-                    },
-                    (err) => {
-                        console.error('Failed to start Azure Speech:', err);
-                        setError(String(err));
-                        reject(err);
-                    }
-                );
-            });
-
-            // Remove the redundant transcriberRef assignment
         } catch (err) {
-            console.error('Azure Speech init error:', err);
+            console.error('Deepgram init error:', err);
             setError(err.message || String(err));
         }
     }, [onTranscript]);
 
     const stopListening = useCallback(() => {
-        if (transcriberRef.current) {
-            const { transcriber, displayStream, micStream, audioContext } = transcriberRef.current;
+        if (sessionRef.current) {
+            const { dgSocket, displayStream, micStream, audioContext, workletNode } = sessionRef.current;
 
-            if (transcriber) {
-                transcriber.stopTranscribingAsync(
-                    () => {
-                        console.log('🎙️ Azure Speech: transcription stopped');
-                        transcriber.close();
-                    },
-                    (err) => console.error('Error stopping transcription:', err)
-                );
+            // Disconnect worklet
+            if (workletNode) {
+                workletNode.port.onmessage = null;
+                workletNode.disconnect();
             }
 
-            // Clean up custom streams and audio context
+            // Send close signal to Deepgram (empty byte signals end-of-stream)
+            if (dgSocket && dgSocket.readyState === WebSocket.OPEN) {
+                dgSocket.send(new Uint8Array(0));
+                dgSocket.close();
+            }
+
+            // Clean up media tracks and audio context
             if (displayStream) displayStream.getTracks().forEach(track => track.stop());
             if (micStream) micStream.getTracks().forEach(track => track.stop());
             if (audioContext && audioContext.state !== 'closed') audioContext.close();
 
-            transcriberRef.current = null;
+            sessionRef.current = null;
         }
         setIsListening(false);
     }, []);

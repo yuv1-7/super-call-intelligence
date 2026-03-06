@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useWebSocket } from './hooks/useWebSocket.js';
-import { useAzureSpeech } from './hooks/useSpeechRecognition.js';
+import { useDeepgramSpeech } from './hooks/useSpeechRecognition.js';
 import { SignedIn, SignedOut, UserButton } from '@clerk/clerk-react';
 import TranscriptPanel from './components/TranscriptPanel.jsx';
 import MemberCard from './components/MemberCard.jsx';
@@ -40,17 +40,17 @@ export default function App() {
         resetState,
     } = useWebSocket(WS_URL);
 
-    // Azure Speech callback — sends each utterance to the backend
-    const onAzureTranscript = useCallback(
+    // Deepgram Speech callback — sends each utterance to the backend
+    const onDeepgramTranscript = useCallback(
         (event) => {
             sendMessage(event.text, event.isFinal, event.speaker, event.offset);
         },
         [sendMessage]
     );
 
-    // Azure Speech hook — token fetched from backend
-    const { isListening, error: speechError, toggleListening } = useAzureSpeech({
-        onTranscript: onAzureTranscript,
+    // Deepgram Speech hook — token fetched from backend
+    const { isListening, error: speechError, toggleListening } = useDeepgramSpeech({
+        onTranscript: onDeepgramTranscript,
     });
 
     // ─── Call Lifecycle ─── //
@@ -188,7 +188,7 @@ export default function App() {
                     {/* Speech error toast */}
                     {speechError && (
                         <div className="error-toast">
-                            ⚠️ Azure Speech: {speechError}
+                            ⚠️ Deepgram: {speechError}
                         </div>
                     )}
                 </div>

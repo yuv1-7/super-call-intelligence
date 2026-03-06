@@ -2,7 +2,7 @@ import { useRef, useEffect } from 'react';
 
 /**
  * Live transcript panel with speaker diarization.
- * Agent = Guest-1 (cyan), Customer = Guest-2 (amber).
+ * Agent = Speaker 0 (cyan), Customer = Speaker 1 (amber).
  * Shows [Agent 00:00:12]: "text" format with live pulse when listening.
  */
 export default function TranscriptPanel({ transcripts, callActive, isListening }) {
@@ -38,7 +38,7 @@ export default function TranscriptPanel({ transcripts, callActive, isListening }
                         <p>
                             {callActive
                                 ? 'Speak into the microphone. The agent should speak first.'
-                                : 'Click "Start Call" to begin listening. Azure Speech will automatically distinguish between Agent and Customer.'}
+                                : 'Click "Start Call" to begin listening. Deepgram will automatically distinguish between Agent and Customer.'}
                         </p>
                     </div>
                 )}
