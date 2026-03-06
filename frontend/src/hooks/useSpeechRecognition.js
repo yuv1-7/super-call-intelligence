@@ -29,18 +29,9 @@ export function useAzureSpeech({ onTranscript }) {
             const { token, region } = await fetchToken();
 
             const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
+            speechConfig.speechRecognitionLanguage = 'en-IN'; // Phonetic English — Hindi/Punjabi words come out Romanized
 
-            // Set up auto-language detection for Hindi and Indian English. 
-            // Note: pa-IN crashes ConversationTranscriber diarization, so it is handled phonetically.
-            const autoDetectSourceLanguageConfig = SpeechSDK.AutoDetectSourceLanguageConfig.fromLanguages([
-                "en-IN",
-                "hi-IN"
-            ]);
-
-            // Enable continuous language identification
-            speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous");
-
-            // Tuning timeouts: restored to 700ms to ensure diarization has enough silence context
+            // Tuning timeouts: 700ms to ensure diarization has enough silence context
             speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "700");
             speechConfig.setProperty(SpeechSDK.PropertyId.Speech_SegmentationSilenceTimeoutMs, "700");
 
@@ -87,8 +78,8 @@ export function useAzureSpeech({ onTranscript }) {
 
                 const audioConfig = SpeechSDK.AudioConfig.fromStreamInput(mixedStream);
 
-                // Use FromConfig constructor to combine Diarization with Language Detection
-                transcriber = SpeechSDK.ConversationTranscriber.FromConfig(speechConfig, autoDetectSourceLanguageConfig, audioConfig);
+                // Standard constructor — keeps diarization 100% reliable
+                transcriber = new SpeechSDK.ConversationTranscriber(speechConfig, audioConfig);
 
             } catch (err) {
                 if (displayStream) displayStream.getTracks().forEach((track) => track.stop());
