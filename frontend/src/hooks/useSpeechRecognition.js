@@ -29,13 +29,24 @@ export function useAzureSpeech({ onTranscript }) {
             const { token, region } = await fetchToken();
 
             const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
-            speechConfig.speechRecognitionLanguage = 'en-US';
 
-            // Reduce silence timeout to 1000ms for faster token finalization while preserving speaker diarization
+            // Set up auto-language detection for Hindi and Indian English. 
+            // Note: pa-IN crashes ConversationTranscriber diarization, so it is handled phonetically.
+            const autoDetectSourceLanguageConfig = SpeechSDK.AutoDetectSourceLanguageConfig.fromLanguages([
+                "en-IN",
+                "hi-IN"
+            ]);
+
+            // Enable continuous language identification
+            speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous");
+
+            // Tuning timeouts: restored to 700ms to ensure diarization has enough silence context
             speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "700");
             speechConfig.setProperty(SpeechSDK.PropertyId.Speech_SegmentationSilenceTimeoutMs, "700");
 
-            // Capture system audio via screen share
+            // Prioritize latency over accuracy processing to reduce the "lag" feeling
+            speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceResponse_PostProcessingOption, "TrueText");
+            speechConfig.outputFormat = SpeechSDK.OutputFormat.Simple;
             let displayStream;
             let micStream;
             let audioContext;
@@ -75,7 +86,9 @@ export function useAzureSpeech({ onTranscript }) {
                 const mixedStream = destination.stream;
 
                 const audioConfig = SpeechSDK.AudioConfig.fromStreamInput(mixedStream);
-                transcriber = new SpeechSDK.ConversationTranscriber(speechConfig, audioConfig);
+
+                // Use FromConfig constructor to combine Diarization with Language Detection
+                transcriber = SpeechSDK.ConversationTranscriber.FromConfig(speechConfig, autoDetectSourceLanguageConfig, audioConfig);
 
             } catch (err) {
                 if (displayStream) displayStream.getTracks().forEach((track) => track.stop());
