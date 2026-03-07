@@ -1,22 +1,23 @@
 import { useState, useRef, useCallback } from 'react';
 
 /**
- * Custom hook for Deepgram real-time transcription with speaker diarization.
+ * Custom hook for Deepgram real-time transcription with channel-based diarization.
  * 
- * Connects directly to Deepgram's WebSocket API from the browser using a
- * short-lived JWT token fetched from the backend. Uses AudioWorklet for
- * off-main-thread PCM extraction (16-bit, 16kHz mono).
+ * Uses TWO separate audio channels for deterministic speaker identification:
+ *   - Channel 0 (left)  = Microphone → Agent
+ *   - Channel 1 (right) = System audio → Customer
+ * 
+ * Connects directly to Deepgram's WebSocket API with multichannel=true.
+ * Deepgram transcribes each channel independently, so speaker labels
+ * are always correct regardless of voice similarity.
  * 
  * Supports Hindi + English + Hinglish (code-switching) via language=multi
- * with the Nova-3 model, and real-time speaker diarization.
+ * with the Nova-3 model.
  */
 export function useDeepgramSpeech({ onTranscript }) {
     const [isListening, setIsListening] = useState(false);
     const [error, setError] = useState(null);
     const sessionRef = useRef(null);
-    // Track the last known speaker across utterances for interim results
-    // that may not have diarization data yet
-    const lastSpeakerRef = useRef(0);
 
     const fetchToken = async () => {
         const baseUrl = import.meta.env.DEV
@@ -28,53 +29,11 @@ export function useDeepgramSpeech({ onTranscript }) {
         return data.token;
     };
 
-    /**
-     * Determine the dominant speaker for a Deepgram utterance.
-     * Each word in a finalized result has a `speaker` field (integer).
-     * For interim results, words may lack speaker data — we fall back
-     * to the last known speaker from a previous finalized result.
-     */
-    const getDominantSpeaker = (words, isFinal) => {
-        if (!words || words.length === 0) return lastSpeakerRef.current;
-
-        // Check if any word actually has speaker info
-        const wordsWithSpeaker = words.filter(w => w.speaker !== undefined && w.speaker !== null);
-
-        if (wordsWithSpeaker.length === 0) {
-            // No diarization data (common in interim results) — use last known speaker
-            return lastSpeakerRef.current;
-        }
-
-        // Count speaker occurrences
-        const counts = {};
-        for (const w of wordsWithSpeaker) {
-            const s = w.speaker;
-            counts[s] = (counts[s] || 0) + 1;
-        }
-
-        let dominant = lastSpeakerRef.current;
-        let maxCount = 0;
-        for (const [speaker, count] of Object.entries(counts)) {
-            if (count > maxCount) {
-                maxCount = count;
-                dominant = Number(speaker);
-            }
-        }
-
-        // Update last known speaker when we get finalized results
-        if (isFinal) {
-            lastSpeakerRef.current = dominant;
-        }
-
-        return dominant;
-    };
-
     const startListening = useCallback(async () => {
         try {
             setError(null);
-            lastSpeakerRef.current = 0; // Reset speaker tracking for new session
 
-            // 1. Fetch short-lived token from backend
+            // 1. Fetch token from backend
             const token = await fetchToken();
 
             // 2. Capture system audio (screen share) + microphone
@@ -105,36 +64,44 @@ export function useDeepgramSpeech({ onTranscript }) {
                     video: false
                 });
 
-                // 3. Mix the two audio streams using Web Audio API
-                // Use native sample rate — AudioWorklet handles downsampling to 16kHz
+                // 3. Keep streams as SEPARATE channels using ChannelMergerNode
+                //    Channel 0 (left)  = mic → Agent
+                //    Channel 1 (right) = system audio → Customer
                 audioContext = new AudioContext();
-                const displaySource = audioContext.createMediaStreamSource(displayStream);
                 const micSource = audioContext.createMediaStreamSource(micStream);
+                const displaySource = audioContext.createMediaStreamSource(displayStream);
 
-                // 4. Load AudioWorklet for off-main-thread PCM extraction
+                // Merge into a 2-channel (stereo) stream
+                const merger = audioContext.createChannelMerger(2);
+                micSource.connect(merger, 0, 0);      // mic → channel 0 (Agent)
+                displaySource.connect(merger, 0, 1);   // system → channel 1 (Customer)
+
+                // 4. Load AudioWorklet for stereo PCM extraction
                 await audioContext.audioWorklet.addModule('/pcm-processor.js');
-                const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
+                const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor', {
+                    // Ensure the worklet receives 2 channels
+                    channelCount: 2,
+                    channelCountMode: 'explicit',
+                    channelInterpretation: 'discrete',
+                });
 
-                // Connect both sources → worklet
-                displaySource.connect(workletNode);
-                micSource.connect(workletNode);
+                merger.connect(workletNode);
                 // Don't connect to destination — we don't want to play the audio back
 
-                // 5. Open WebSocket directly to Deepgram
+                // 5. Open WebSocket directly to Deepgram with multichannel
                 const dgParams = new URLSearchParams({
                     model: 'nova-3',
                     language: 'multi',
-                    diarize: 'true',
+                    multichannel: 'true',
+                    channels: '2',
                     smart_format: 'true',
                     interim_results: 'true',
                     endpointing: '700',
                     encoding: 'linear16',
                     sample_rate: '16000',
-                    channels: '1',
                 });
 
                 const dgUrl = `wss://api.deepgram.com/v1/listen?${dgParams.toString()}`;
-
                 const dgSocket = new WebSocket(dgUrl, ['token', token]);
 
                 // Store session for cleanup
@@ -148,10 +115,10 @@ export function useDeepgramSpeech({ onTranscript }) {
 
                 // 6. Wire up events
                 dgSocket.onopen = () => {
-                    console.log('🎙️ Deepgram: WebSocket connected');
+                    console.log('🎙️ Deepgram: WebSocket connected (multichannel: ch0=Agent, ch1=Customer)');
                     setIsListening(true);
 
-                    // Route PCM data from AudioWorklet → Deepgram WebSocket
+                    // Route interleaved stereo PCM from AudioWorklet → Deepgram
                     workletNode.port.onmessage = (event) => {
                         if (dgSocket.readyState === WebSocket.OPEN) {
                             dgSocket.send(event.data);
@@ -168,33 +135,26 @@ export function useDeepgramSpeech({ onTranscript }) {
                             if (!alt || !alt.transcript) return;
 
                             const text = alt.transcript;
-                            const words = alt.words || [];
                             const isFinal = msg.is_final === true;
                             const start = msg.start || 0;
 
-                            // Debug: log raw speaker data from Deepgram
-                            if (isFinal && words.length > 0) {
-                                const speakerIds = words.map(w => w.speaker);
-                                const uniqueSpeakers = [...new Set(speakerIds)];
-                                console.log(
-                                    `🔍 Deepgram raw diarization — speakers: [${uniqueSpeakers.join(',')}], ` +
-                                    `word count: ${words.length}, text: "${text.slice(0, 50)}"`
-                                );
-                            }
+                            // Multichannel: channel_index[0] tells us which channel
+                            // Channel 0 = mic = Agent, Channel 1 = system = Customer
+                            const channelIdx = msg.channel_index?.[0] ?? 0;
+                            const speaker = String(channelIdx); // "0" = Agent, "1" = Customer
 
-                            const speaker = getDominantSpeaker(words, isFinal);
-
-                            // Round offset to 2 decimal places for stable deduplication
-                            // between interim and final results
+                            // Round offset for stable deduplication
                             const stableOffset = Math.round(start * 100) / 100;
 
                             console.log(
-                                `${isFinal ? '📝 FINAL' : '💬 Partial'} [Speaker ${speaker}]: ${text.slice(0, 60)}`
+                                `${isFinal ? '📝 FINAL' : '💬 Partial'} ` +
+                                `[Ch${channelIdx} → ${channelIdx === 0 ? 'Agent' : 'Customer'}]: ` +
+                                `${text.slice(0, 60)}`
                             );
 
                             onTranscript?.({
                                 text,
-                                speaker: String(speaker),
+                                speaker,
                                 isFinal,
                                 offset: stableOffset,
                             });

@@ -1,14 +1,14 @@
 /**
- * AudioWorklet processor that converts incoming audio to 16-bit PCM at 16kHz.
+ * AudioWorklet processor that converts incoming stereo audio to 
+ * interleaved 16-bit PCM at 16kHz for Deepgram multichannel transcription.
  * 
- * Receives audio from the AudioWorklet thread, downsamples from the browser's
- * native sample rate (typically 44100 or 48000) to 16kHz, converts to Int16,
- * and posts the resulting ArrayBuffer to the main thread.
+ * Expects 2-channel input (channel 0 = mic/Agent, channel 1 = system/Customer).
+ * Downsamples from the browser's native sample rate to 16kHz and outputs
+ * interleaved Int16 PCM (L, R, L, R, ...).
  */
 class PCMProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
-        this._buffer = [];
         // sampleRate is a global available in AudioWorkletGlobalScope
         this._inputSampleRate = sampleRate;
         this._targetSampleRate = 16000;
@@ -18,23 +18,29 @@ class PCMProcessor extends AudioWorkletProcessor {
         const input = inputs[0];
         if (!input || input.length === 0) return true;
 
-        // Take the first channel (mono)
-        const channelData = input[0];
-        if (!channelData || channelData.length === 0) return true;
+        const ch0 = input[0]; // mic (Agent)
+        const ch1 = input[1] || input[0]; // system audio (Customer), fallback to ch0 if mono
+
+        if (!ch0 || ch0.length === 0) return true;
 
         // Downsample to 16kHz
         const ratio = this._inputSampleRate / this._targetSampleRate;
-        const targetLength = Math.floor(channelData.length / ratio);
-        const pcm16 = new Int16Array(targetLength);
+        const targetLength = Math.floor(ch0.length / ratio);
+
+        // Interleaved stereo: [L0, R0, L1, R1, ...]
+        const pcm16 = new Int16Array(targetLength * 2);
 
         for (let i = 0; i < targetLength; i++) {
             const srcIndex = Math.floor(i * ratio);
-            // Clamp to [-1, 1] and convert to Int16 range
-            const sample = Math.max(-1, Math.min(1, channelData[srcIndex]));
-            pcm16[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+
+            const sampleL = Math.max(-1, Math.min(1, ch0[srcIndex]));
+            const sampleR = Math.max(-1, Math.min(1, ch1[srcIndex]));
+
+            pcm16[i * 2] = sampleL < 0 ? sampleL * 0x8000 : sampleL * 0x7FFF;
+            pcm16[i * 2 + 1] = sampleR < 0 ? sampleR * 0x8000 : sampleR * 0x7FFF;
         }
 
-        // Post the raw PCM buffer to the main thread
+        // Post the raw interleaved PCM buffer to the main thread
         this.port.postMessage(pcm16.buffer, [pcm16.buffer]);
 
         return true;
