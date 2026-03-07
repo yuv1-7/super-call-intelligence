@@ -59,9 +59,25 @@ export function useWebSocket(url) {
         switch (type) {
             case 'transcript':
                 setTranscripts((prev) => {
+                    // Helper: check if two texts are substantially similar (>50% word overlap)
+                    const isSimilar = (a, b) => {
+                        const wa = new Set(a.toLowerCase().split(/\s+/));
+                        const wb = new Set(b.toLowerCase().split(/\s+/));
+                        const overlap = [...wa].filter(w => wb.has(w)).length;
+                        return overlap / Math.max(wa.size, wb.size, 1) > 0.5;
+                    };
+
                     if (data.is_finalized) {
-                        // Remove matching partials by offset (not text!) to avoid duplicates
-                        const filtered = prev.filter((t) => t.is_finalized || t.offset !== data.offset);
+                        // Remove: (a) exact offset partials AND (b) nearby partials with similar text
+                        // This handles multichannel bleed where same speech appears on both channels
+                        const filtered = prev.filter((t) => {
+                            if (t.is_finalized) return true; // keep all finals
+                            // Remove partials with same offset
+                            if (t.offset === data.offset) return false;
+                            // Remove partials within 2s time window with similar text (cross-channel bleed)
+                            if (Math.abs(t.offset - data.offset) < 2 && isSimilar(t.text, data.text)) return false;
+                            return true;
+                        });
                         return [...filtered, {
                             text: data.text,
                             is_finalized: true,
@@ -71,7 +87,7 @@ export function useWebSocket(url) {
                             id: Date.now(),
                         }];
                     }
-                    // Filter out existing partials for the SAME offset so we don't spam the UI
+                    // For partials: replace existing partial at same offset
                     const filteredPartial = prev.filter((t) => t.is_finalized || t.offset !== data.offset);
                     return [...filteredPartial, {
                         text: data.text,

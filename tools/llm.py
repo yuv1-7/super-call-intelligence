@@ -1,6 +1,8 @@
 # tools/llm.py — OpenAI LLM utilities for Insurance FNOL + Post-Call Evaluation
 
 import os
+import json
+import asyncio
 from typing import Literal
 from openai import AsyncOpenAI
 from pydantic import BaseModel
@@ -53,28 +55,43 @@ class ClaimFacts(BaseModel):
     other_parties_involved: str | None
 
 
-class ScoreDetail(BaseModel):
-    score: int
-    feedback: str
+# ─── Rubric-Based Post-Call Evaluation Schemas ─── #
+
+class RubricItem(BaseModel):
+    """A single scored criterion within a rubric section."""
+    criterion: str           # e.g. "Call recording disclosure given"
+    points_possible: int     # max points for this item
+    points_awarded: int      # 0 to points_possible
+    passed: bool
+    evidence: str            # exact transcript quote, or "Not found"
+    deduction_reason: str | None  # why points were lost (null if passed)
 
 
-class EvaluationScores(BaseModel):
-    empathy_and_tone: ScoreDetail
-    information_gathering: ScoreDetail
-    compliance_adherence: ScoreDetail
-    process_knowledge: ScoreDetail
-    resolution_and_next_steps: ScoreDetail
+class ScoredSection(BaseModel):
+    """One of the 6 scored rubric sections."""
+    section_name: str
+    points_possible: int
+    points_awarded: int
+    auto_failed: bool
+    auto_fail_reason: str | None
+    rubric_items: list[RubricItem]
 
 
-class PostCallEvaluation(BaseModel):
-    overall_score: int
-    call_summary: str
-    claim_type_detected: str
-    scores: EvaluationScores
+class RubricEvaluation(BaseModel):
+    """LLM Call A output — rubric scoring with evidence."""
+    sections: list[ScoredSection]
+    auto_fails: list[str]          # list of triggered auto-fail descriptions
+
+
+class NarrativeEvaluation(BaseModel):
+    """LLM Call B output — comprehensive narrative/coaching feedback."""
+    call_summary: str             # Multi-paragraph detailed call narrative
+    caller_profile: str           # Caller behavior, tone, emotional state summary
+    call_highlights: list[str]    # Key moments/events during the call
     strengths: list[str]
     improvements: list[str]
-    compliance_violations: list[str]
     coaching_notes: str
+    recommended_supervisor_action: str | None
 
 
 # ═══════════════════════════════════════════════════════
@@ -469,18 +486,342 @@ async def generate_agent_suggestion_stream(
             yield delta
 
 # ═══════════════════════════════════════════════════════
-# POST-CALL EVALUATION — Structured Output
+# POST-CALL EVALUATION — Rubric-Based Scoring System
 # ═══════════════════════════════════════════════════════
+
+# ─── FNOL Required Fields per Claim Type ─── #
+_CAR_FNOL_FIELDS = {
+    "date_of_incident":      {"label": "Date of Incident",      "points": 3},
+    "time_of_incident":      {"label": "Time of Incident",      "points": 2},
+    "location_of_incident":  {"label": "Location of Incident",  "points": 3},
+    "incident_description":  {"label": "Description",           "points": 3},
+    "vehicle_drivable":      {"label": "Vehicle Drivability",   "points": 2},
+    "police_report_filed":   {"label": "Police Report Status",  "points": 3},
+    "injuries_reported":     {"label": "Injuries Reported",     "points": 2},
+    "other_parties_involved": {"label": "Other Parties",        "points": 2},
+}
+
+_LIFE_FNOL_FIELDS = {
+    "caller_name":                   {"label": "Caller Identity",             "points": 2},
+    "relationship_to_policyholder":  {"label": "Relationship to Policyholder","points": 2},
+    "date_of_incident":              {"label": "Date of Death",               "points": 3},
+    "location_of_incident":          {"label": "Location of Death",           "points": 3},
+    "cause_of_death":                {"label": "Cause of Death",              "points": 3},
+}
+
+
+def calculate_fnol_completeness(
+    accumulated_facts: dict | None,
+    claim_type: str | None,
+) -> dict:
+    """Pure Python FNOL completeness scoring based on accumulated_facts."""
+    if not accumulated_facts:
+        accumulated_facts = {}
+
+    if claim_type == "life_insurance":
+        required = _LIFE_FNOL_FIELDS
+    elif claim_type in ("car_insurance",):
+        required = _CAR_FNOL_FIELDS
+    else:
+        required = _CAR_FNOL_FIELDS  # default to car
+
+    total_points = sum(f["points"] for f in required.values())
+    earned_points = 0
+    collected = []
+    missing = []
+
+    for key, meta in required.items():
+        val = accumulated_facts.get(key)
+        if val is not None:
+            earned_points += meta["points"]
+            collected.append({"field": meta["label"], "value": str(val), "points": meta["points"]})
+        else:
+            missing.append({"field": meta["label"], "points": meta["points"]})
+
+    pct = round((earned_points / total_points) * 100) if total_points > 0 else 0
+
+    return {
+        "fnol_completeness_pct": pct,
+        "fnol_points_earned": earned_points,
+        "fnol_points_possible": total_points,
+        "fnol_fields_collected": collected,
+        "fnol_fields_missing": missing,
+    }
+
+
+# ─── Rubric Evaluator Prompt (Call A) ─── #
+
+_RUBRIC_SYSTEM_PROMPT = """You are an expert insurance call center QA analyst using a point-deduction rubric system.
+You MUST evaluate the agent's performance using EXACTLY the rubric sections and criteria below.
+For EVERY criterion, you must:
+1. Award points (0 to max) based on evidence from the transcript
+2. Set passed=true only if FULL points are awarded
+3. Provide a direct quote from the transcript as evidence, or "Not found" if the behavior was absent
+4. Provide a deduction_reason if points were lost (null if full points awarded)
+
+CRITICAL AUTO-FAIL RULES:
+- If an auto-fail is triggered, set auto_failed=true on that section and set points_awarded=0 for the ENTIRE section
+- Add the auto-fail description to the top-level auto_fails list
+- Auto-fails are SERIOUS — they indicate potential legal/compliance violations
+
+SCORING PRINCIPLES:
+- Be fair and evidence-based. Every deduction must cite the transcript.
+- Do NOT inflate scores. If the agent didn't do something, they get 0 for that item.
+- For scaled items (not binary), use partial credit only when partially demonstrated.
+- For binary items, it's all-or-nothing.
+- Consider the claim type context — life insurance calls require different handling than car accident calls.
+"""
+
+
+def _build_rubric_criteria(claim_type: str | None) -> str:
+    """Build the rubric criteria section of the prompt based on claim type."""
+
+    base = """
+═══ SECTION 1: Opening Protocol (10 pts) ═══
+| Criterion | Points | Type |
+|-----------|--------|------|
+| Proper greeting with agent name + company name stated | 3 | Binary |
+| Call recording disclosure given | 4 | Binary |
+| Warm, professional tone in opening | 3 | Scaled (0-3) |
+
+EVALUATION SCOPE: Scan ONLY the first 3 agent utterances.
+Check for: name introduction, "Super Insurance" or company mention, "recorded" keyword, and assess warmth/professionalism of opening lines.
+
+═══ SECTION 2: Verification & Account Handling (15 pts) ═══
+| Criterion | Points | Type |
+|-----------|--------|------|
+| Attempted to locate account (policy ID or phone) | 4 | Binary |
+| Account successfully identified | 3 | Binary |
+| Caller identity verified against records | 4 | Binary |
+| Handled failed lookup gracefully (if applicable, N/A = full points) | 4 | Binary/N-A |
+
+EVALUATION: Check if account was located (from context of conversation), if agent confirmed caller's name, and how agent handled any lookup failure. If lookup wasn't needed or failed lookup didn't occur, award full points for graceful handling.
+
+═══ SECTION 3: Empathy & Communication (20 pts) ═══
+| Criterion | Points | Type |
+|-----------|--------|------|
+| Expressed genuine sympathy/condolences at first relevant moment | 5 | Binary |
+| Did NOT repeat apologies robotically (max 2 empathy statements OK) | 3 | Binary (deduct if >2 apologies) |
+| Did NOT overuse caller's name (max 1 usage after initial greeting) | 2 | Binary (deduct if violated) |
+| Asked one question at a time throughout call | 5 | Scaled (deduct 1pt per violation, min 0) |
+| Response tone matched caller's emotional state | 5 | Scaled (0-5) |
+
+EVALUATION: Count empathy statements ("sorry", "condolences", etc). Count name usage. Check for multi-question responses. Assess tone appropriateness from word choice and phrasing.
+"""
+
+    if claim_type == "life_insurance":
+        section4_note = """
+═══ SECTION 4: Information Gathering Quality (25 pts) ═══
+NOTE: The mathematical FNOL field completeness is calculated separately by Python.
+YOU are scoring the QUALITY of information gathering, not the completeness of fields.
+| Criterion | Points | Type |
+|-----------|--------|------|
+| Information gathered efficiently without redundant questions | 8 | Scaled (deduct 3pts per repeated question) |
+| Did not ask for information already provided or deducible from context | 5 | Scaled (deduct 2pts per unnecessary question) |
+| Required documents communicated COMPLETELY in one response (not partially) | 5 | Binary |
+| Payout options communicated | 4 | Binary |
+| Processing timeline communicated | 3 | Binary |
+
+EVALUATION: Check if agent asked for something the caller already stated. Check if all required documents (death certificate, claim form, photo ID) were mentioned together. Check if payout options (lump sum, installments, annuity) were mentioned. Check if processing timeline (30-60 days) was mentioned.
+"""
+    else:
+        section4_note = """
+═══ SECTION 4: Information Gathering Quality (25 pts) ═══
+NOTE: The mathematical FNOL field completeness is calculated separately by Python.
+YOU are scoring the QUALITY of information gathering, not the completeness of fields.
+| Criterion | Points | Type |
+|-----------|--------|------|
+| Information gathered efficiently without redundant questions | 8 | Scaled (deduct 3pts per repeated question) |
+| Did not ask for information already provided or deducible from context | 5 | Scaled (deduct 2pts per unnecessary question) |
+| Proactively offered relevant services (towing/rental) when applicable | 4 | Binary/N-A |
+| Correctly assessed coverage before promising services | 4 | Binary/N-A |
+| Next steps and timeline communicated (e.g., adjuster contact within 24-48hrs) | 4 | Binary |
+
+EVALUATION: Check if agent re-asked for already-stated details. If vehicle wasn't drivable, check if towing was offered. Check if coverage was verified against policy data before offering services. Check if next steps were explained.
+"""
+
+    if claim_type == "life_insurance":
+        section5 = """
+═══ SECTION 5: Compliance & Process Adherence (20 pts) ═══
+| Criterion | Points | Auto-fail? |
+|-----------|--------|-----------|
+| HIPAA notice given before collecting medical/personal info | 5 | ✅ YES — section score = 0 if missing |
+| Contestability period flagged if applicable (check policy data) | 5 | No |
+| Beneficiary verified against policy records | 4 | No |
+| Fraud indicators flagged/noted if detected (or N/A = full points) | 3 | No |
+| Did NOT disclose unauthorized information | 3 | No |
+
+AUTO-FAIL: If agent collected sensitive medical/personal details without mentioning HIPAA or information privacy, the ENTIRE Section 5 = 0 points.
+"""
+    else:
+        section5 = """
+═══ SECTION 5: Compliance & Process Adherence (20 pts) ═══
+| Criterion | Points | Auto-fail? |
+|-----------|--------|-----------|
+| Never advised caller to admit fault | 5 | ✅ YES — section score = 0 if violated |
+| Correctly assessed coverage before promising services | 4 | No |
+| Police report handling was appropriate (asked once, didn't loop) | 4 | No |
+| Fraud indicators flagged/noted if detected (or N/A = full points) | 4 | No |
+| Call recording disclosure given (cross-check with Section 1) | 3 | No |
+
+AUTO-FAIL: If agent told the caller "it sounds like you were at fault", "you should admit fault", or any variation advising fault admission → ENTIRE Section 5 = 0 points.
+"""
+
+    section6 = """
+═══ SECTION 6: Resolution & Call Close (10 pts) ═══
+| Criterion | Points | Type |
+|-----------|--------|------|
+| Next steps clearly communicated before closing | 4 | Scaled (0-4) |
+| All key procedure points from knowledge docs covered during call | 3 | Scaled (0-3) |
+| Clean call close without unnecessary dragging | 3 | Scaled (0-3) |
+
+EVALUATION: Agent gets 0 on "procedure points covered" if any critical procedure (timeline, documents, payout options for life; timeline, adjuster, next steps for car) was never mentioned. "Clean close" means the agent wrapped up promptly once business was done — no repetitive summaries or redundant confirmations.
+"""
+
+    return base + section4_note + section5 + section6
+
+
+# ─── Narrative Generator Prompt (Call B) ─── #
+
+_NARRATIVE_SYSTEM_PROMPT = """You are an expert insurance call center QA coach writing the narrative portion of a call evaluation report.
+Your job is to create a COMPREHENSIVE, DETAILED call report that would give a supervisor or quality manager full context of the call without needing to listen to it.
+
+You must produce:
+
+1. call_summary: A DETAILED multi-paragraph narrative (4-6 paragraphs) covering:
+   - PARAGRAPH 1: Call overview — who called, why, what type of claim, the primary insurance product involved
+   - PARAGRAPH 2: How the caller communicated — their emotional state, language used (formal/informal, distressed/calm), any notable behavior (angry, confused, cooperative, in a hurry, multilingual)
+   - PARAGRAPH 3: How the agent handled the call — their approach, tone, questioning style, whether they followed procedure. Were they empathetic? Efficient? Did they take control of the conversation?
+   - PARAGRAPH 4: Key information exchanged — what facts were gathered, what was communicated to the caller (next steps, timelines, documents needed), any services offered (towing, rental)
+   - PARAGRAPH 5: Call outcome and resolution — how did the call end, what remains to be done, were commitments made, was the caller satisfied?
+   - PARAGRAPH 6 (if applicable): Any notable issues — compliance concerns, missed opportunities, exceptional handling
+
+2. caller_profile: A 2-3 sentence behavioral profile of the caller — their emotional state, communication style, language preference, level of distress or urgency. Example: "The caller was visibly distressed and spoke in rapid Hinglish, switching between Hindi and English mid-sentence. They were cooperative but anxious, repeatedly asking for reassurance that help was on the way."
+
+3. call_highlights: 4-8 bullet points of key moments/events during the call, in chronological order. Each should be a specific, factual statement. Examples:
+   - "Caller reported a car accident on NH-48 near Jaipur"
+   - "Agent verified policy NS-CAR-2024-0042 and confirmed active coverage"
+   - "Agent offered towing service after confirming roadside assistance coverage"
+   - "Caller mentioned police report was filed (FIR #12345)"
+
+4. strengths: 3-5 specific things the agent did well (cite examples from the call)
+
+5. improvements: 2-4 specific, actionable things the agent should improve (be constructive, not punitive)
+
+6. coaching_notes: 2-3 sentences of coaching advice for the agent's development
+
+7. recommended_supervisor_action: ONLY populate this if the overall score is below 45 (Critical Issues). Suggest specific supervisor follow-up. Set to null otherwise.
+
+Be specific and cite examples from the transcript. Avoid generic statements like "good job" or "needs improvement".
+Write as though this report will be read by a supervisor who did NOT listen to the call.
+"""
+
+
+async def _run_rubric_evaluation(
+    formatted_transcript: str,
+    call_duration: float,
+    detected_intent: str | None,
+    member_data: dict | None,
+    claim_type: str | None,
+    knowledge_docs: list[dict] | None,
+) -> dict:
+    """Call A — LLM rubric evaluator. Returns scored sections with evidence."""
+
+    rubric_criteria = _build_rubric_criteria(claim_type)
+
+    user_prompt = f"""Call Transcript:
+{formatted_transcript}
+
+Call Duration: {int(call_duration)} seconds
+Detected Claim Type: {detected_intent or 'unknown'}
+Insurance Line: {claim_type or 'unknown'}
+Policyholder Identified: {member_data.get('name') if member_data else 'Not identified'}
+Policyholder Data: {json.dumps(member_data, indent=2) if member_data else 'None'}
+
+Knowledge Docs Available During Call:
+{_format_docs(knowledge_docs)}
+
+═══════════════════════════════════════
+RUBRIC — Score each section below:
+═══════════════════════════════════════
+{rubric_criteria}
+
+Score EVERY criterion in EVERY section. Return the structured rubric evaluation."""
+
+    response = await client.beta.chat.completions.parse(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": _RUBRIC_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.2,
+        max_tokens=3000,
+        response_format=RubricEvaluation,
+    )
+
+    return response.choices[0].message.parsed.model_dump()
+
+
+async def _run_narrative_generation(
+    formatted_transcript: str,
+    call_duration: float,
+    detected_intent: str | None,
+    overall_score: int,
+) -> dict:
+    """Call B — LLM narrative generator. Returns summary, strengths, improvements, coaching."""
+
+    user_prompt = f"""Call Transcript:
+{formatted_transcript}
+
+Call Duration: {int(call_duration)} seconds
+Detected Claim Type: {detected_intent or 'unknown'}
+Overall Rubric Score: {overall_score}/100
+
+Write the narrative evaluation for this call."""
+
+    response = await client.beta.chat.completions.parse(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": _NARRATIVE_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.3,
+        max_tokens=2000,
+        response_format=NarrativeEvaluation,
+    )
+
+    return response.choices[0].message.parsed.model_dump()
+
+
+def _calculate_grade(score: int) -> str:
+    """Map numeric score to grade band."""
+    if score >= 90:
+        return "Exceptional"
+    elif score >= 75:
+        return "Proficient"
+    elif score >= 60:
+        return "Developing"
+    elif score >= 45:
+        return "Needs Improvement"
+    else:
+        return "Critical Issues"
+
 
 async def generate_post_call_evaluation(
     transcript_lines: list[dict],
     call_duration: float,
     detected_intent: str | None,
     member_data: dict | None,
+    accumulated_facts: dict | None = None,
+    claim_type: str | None = None,
+    knowledge_docs: list[dict] | None = None,
 ) -> dict:
     """
-    Generate a comprehensive post-call evaluation scorecard.
-    Returns structured JSON with scores and feedback.
+    Generate a comprehensive rubric-based post-call evaluation.
+    Runs 3 scoring paths:
+      A) LLM rubric evaluator (sections 1-6 with evidence)
+      B) LLM narrative generator (summary, coaching)
+      C) Pure Python FNOL completeness (mathematical field scoring)
     """
 
     # Format transcript for LLM
@@ -489,45 +830,58 @@ async def generate_post_call_evaluation(
         for line in transcript_lines
     )
 
-    system_prompt = """You are an insurance call center quality assurance analyst.
-Evaluate the agent's performance organically based on the flow and context of the conversation. Do not penalize the agent for missing rigid checklist items if they were not relevant or if the agent naturally deduced them from the caller's context.
+    # ── Call C (instant): FNOL Completeness ──
+    fnol_result = calculate_fnol_completeness(accumulated_facts, claim_type)
 
-Scoring criteria:
-- Empathy: Did the agent show appropriate concern and maintain a professional, helpful tone without sounding robotic?
-- Information Gathering: Did they efficiently collect necessary details without aggressively interrogating the customer? Did they deduce implicit info correctly?
-- Compliance: Did they adhere to policy coverages (e.g., verifying towing coverage) and provide necessary disclosures naturally?
-- Process Knowledge: Did the agent understand the insurance processes and guide the caller effectively?
-- Resolution: Did the agent transition out of the call smoothly once core details were gathered without dragging it out?
-
-Scores use a 1-10 scale per category and 1-100 overall."""
-
-    user_prompt = f"""Call Transcript:
-{formatted_transcript}
-
-Call Duration: {int(call_duration)} seconds
-Detected Claim Type: {detected_intent or 'unknown'}
-Policyholder Identified: {member_data.get('name') if member_data else 'Not identified'}
-
-Evaluate this agent's performance:"""
-
-    response = await client.beta.chat.completions.parse(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.3,
-        max_tokens=800,
-        response_format=PostCallEvaluation,
+    # ── Call A: Rubric Evaluation ──
+    rubric_result = await _run_rubric_evaluation(
+        formatted_transcript=formatted_transcript,
+        call_duration=call_duration,
+        detected_intent=detected_intent,
+        member_data=member_data,
+        claim_type=claim_type,
+        knowledge_docs=knowledge_docs,
     )
 
-    evaluation = response.choices[0].message.parsed.model_dump()
+    # Calculate overall score from rubric sections
+    overall_score = sum(s["points_awarded"] for s in rubric_result["sections"])
+    # Cap at 100
+    overall_score = min(overall_score, 100)
+    grade = _calculate_grade(overall_score)
 
-    # Add metadata
-    evaluation["call_duration_seconds"] = int(call_duration)
-    evaluation["total_utterances"] = len(transcript_lines)
-    evaluation["agent_utterances"] = sum(1 for l in transcript_lines if l["speaker"] == "Agent")
-    evaluation["customer_utterances"] = sum(1 for l in transcript_lines if l["speaker"] == "Customer")
+    # ── Call B: Narrative (runs after we know the score) ──
+    narrative_result = await _run_narrative_generation(
+        formatted_transcript=formatted_transcript,
+        call_duration=call_duration,
+        detected_intent=detected_intent,
+        overall_score=overall_score,
+    )
+
+    # ── Merge everything into final evaluation ──
+    evaluation = {
+        "overall_score": overall_score,
+        "grade": grade,
+        "call_summary": narrative_result["call_summary"],
+        "caller_profile": narrative_result["caller_profile"],
+        "call_highlights": narrative_result["call_highlights"],
+        "sections": rubric_result["sections"],
+        "auto_fails": rubric_result["auto_fails"],
+        "strengths": narrative_result["strengths"],
+        "improvements": narrative_result["improvements"],
+        "coaching_notes": narrative_result["coaching_notes"],
+        "recommended_supervisor_action": narrative_result["recommended_supervisor_action"],
+        # FNOL data
+        "fnol_completeness_pct": fnol_result["fnol_completeness_pct"],
+        "fnol_points_earned": fnol_result["fnol_points_earned"],
+        "fnol_points_possible": fnol_result["fnol_points_possible"],
+        "fnol_fields_collected": fnol_result["fnol_fields_collected"],
+        "fnol_fields_missing": fnol_result["fnol_fields_missing"],
+        # Metadata
+        "call_duration_seconds": int(call_duration),
+        "total_utterances": len(transcript_lines),
+        "agent_utterances": sum(1 for l in transcript_lines if l["speaker"] == "Agent"),
+        "customer_utterances": sum(1 for l in transcript_lines if l["speaker"] == "Customer"),
+    }
 
     return evaluation
 

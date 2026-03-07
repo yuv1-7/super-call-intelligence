@@ -97,6 +97,8 @@ async def stream_endpoint(websocket: WebSocket):
     call_start_time = time.time()
     detected_intent = None
     detected_member = None
+    detected_claim_type: str | None = None  # Track claim type for post-call eval
+    last_knowledge_docs: list[dict] = []     # Track knowledge docs for post-call eval
     accumulated_facts: dict = {}  # Persistent fact state across the entire call
 
     try:
@@ -122,6 +124,9 @@ async def stream_endpoint(websocket: WebSocket):
                     call_duration=call_duration,
                     detected_intent=detected_intent,
                     member_data=detected_member,
+                    accumulated_facts=accumulated_facts,
+                    claim_type=detected_claim_type,
+                    knowledge_docs=last_knowledge_docs,
                 )
 
                 # Attach FNOL form data for the frontend
@@ -142,6 +147,8 @@ async def stream_endpoint(websocket: WebSocket):
                 call_start_time = time.time()
                 detected_intent = None
                 detected_member = None
+                detected_claim_type = None
+                last_knowledge_docs = []
                 accumulated_facts = {}
                 
                 continue
@@ -155,6 +162,8 @@ async def stream_endpoint(websocket: WebSocket):
                 call_start_time = time.time()
                 detected_intent = None
                 detected_member = None
+                detected_claim_type = None
+                last_knowledge_docs = []
                 accumulated_facts = {}
                 continue
 
@@ -292,12 +301,15 @@ async def stream_endpoint(websocket: WebSocket):
                 # Send knowledge articles — filter by detected claim type
                 knowledge_docs = result.get("knowledge_docs") or []
                 claim_type = result.get("claim_type", "")
+                if claim_type:
+                    detected_claim_type = claim_type
                 if claim_type and knowledge_docs:
                     knowledge_docs = [
                         doc for doc in knowledge_docs
                         if doc.get("category", "") == "general" or doc.get("category", "") == claim_type
                     ]
                 if knowledge_docs:
+                    last_knowledge_docs = knowledge_docs  # Persist for post-call eval
                     await websocket.send_json({
                         "type": "knowledge",
                         "data": knowledge_docs,

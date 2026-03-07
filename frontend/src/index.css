@@ -1574,6 +1574,10 @@ body {
   color: #94a3b8;
 }
 
+/* ═══════════════════════════════════════════════════════
+   POST-CALL CARD — Rubric-Based Evaluation
+   ═══════════════════════════════════════════════════════ */
+
 .post-call-card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
@@ -1583,6 +1587,72 @@ body {
   overflow: hidden;
 }
 
+/* ─── Auto-Fail Banner ─── */
+.auto-fail-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 24px;
+  background: rgba(248, 113, 113, 0.12);
+  border-bottom: 2px solid rgba(248, 113, 113, 0.4);
+  animation: bannerPulse 2s ease-in-out infinite;
+}
+
+@keyframes bannerPulse {
+  0%, 100% { background: rgba(248, 113, 113, 0.12); }
+  50% { background: rgba(248, 113, 113, 0.18); }
+}
+
+.auto-fail-icon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.auto-fail-content strong {
+  display: block;
+  font-size: 0.9rem;
+  color: var(--accent-red);
+  margin-bottom: 4px;
+}
+
+.auto-fail-content p {
+  font-size: 0.82rem;
+  color: rgba(248, 113, 113, 0.9);
+  margin: 2px 0;
+  line-height: 1.5;
+}
+
+/* ─── Supervisor Escalation Banner ─── */
+.supervisor-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 24px;
+  background: rgba(251, 191, 36, 0.1);
+  border-bottom: 2px solid rgba(251, 191, 36, 0.3);
+}
+
+.supervisor-icon {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
+.supervisor-content strong {
+  display: block;
+  font-size: 0.88rem;
+  color: var(--accent-amber);
+  margin-bottom: 4px;
+}
+
+.supervisor-content p {
+  font-size: 0.82rem;
+  color: rgba(251, 191, 36, 0.85);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ─── Header ─── */
 .post-call-header {
   display: flex;
   align-items: center;
@@ -1617,6 +1687,13 @@ body {
   margin-top: 2px;
 }
 
+.score-grade-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
 .overall-score-circle {
   width: 80px;
   height: 80px;
@@ -1640,15 +1717,85 @@ body {
   color: var(--text-muted);
 }
 
-.post-call-summary {
-  padding: 16px 28px;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 0.88rem;
-  color: var(--text-secondary);
-  line-height: 1.6;
+.grade-badge {
+  padding: 4px 14px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #fff;
 }
 
-/* Call Metrics */
+/* ─── Call Report Section ─── */
+.call-report-section {
+  padding: 20px 28px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.call-report-narrative h4,
+.caller-profile-box h4,
+.call-highlights h4 {
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.call-report-narrative p {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin-bottom: 10px;
+}
+
+.call-report-narrative p:last-child {
+  margin-bottom: 0;
+}
+
+.caller-profile-box {
+  margin-top: 16px;
+  padding: 14px 18px;
+  background: rgba(139, 92, 246, 0.06);
+  border-left: 3px solid rgba(139, 92, 246, 0.5);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.caller-profile-box p {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-style: italic;
+}
+
+.call-highlights {
+  margin-top: 16px;
+}
+
+.call-highlights ul {
+  list-style: none;
+  padding: 0;
+}
+
+.call-highlights li {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  padding: 5px 0 5px 20px;
+  position: relative;
+  line-height: 1.5;
+  border-left: 2px solid rgba(99, 102, 241, 0.2);
+  margin-left: 6px;
+}
+
+.call-highlights li::before {
+  content: '●';
+  position: absolute;
+  left: -5px;
+  color: rgba(99, 102, 241, 0.6);
+  font-size: 0.5rem;
+  top: 9px;
+}
+
+/* ─── Call Metrics ─── */
 .call-metrics {
   display: flex;
   gap: 0;
@@ -1682,50 +1829,294 @@ body {
   margin-top: 2px;
 }
 
-/* Category Scores */
-.score-categories {
-  padding: 20px 28px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+/* ═══ Rubric Sections ═══ */
+.rubric-sections {
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.score-category-header {
+.rubric-section {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.rubric-section:last-child {
+  border-bottom: none;
+}
+
+.rubric-section.auto-failed {
+  background: rgba(248, 113, 113, 0.03);
+}
+
+.rubric-section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.85rem;
+  width: 100%;
+  padding: 14px 24px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease;
+}
+
+.rubric-section-header:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.rubric-section-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rubric-expand-icon {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  width: 14px;
+}
+
+.rubric-section-name {
+  font-size: 0.88rem;
   font-weight: 600;
-  margin-bottom: 6px;
 }
 
-.category-score {
+.auto-fail-tag {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.62rem;
   font-weight: 800;
-  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+  background: rgba(248, 113, 113, 0.2);
+  color: var(--accent-red);
+  border: 1px solid rgba(248, 113, 113, 0.3);
 }
 
-.score-bar {
+.rubric-section-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rubric-section-score {
+  font-size: 0.9rem;
+  font-weight: 800;
+  min-width: 50px;
+  text-align: right;
+}
+
+.rubric-section-bar {
+  width: 80px;
   height: 6px;
   background: rgba(255, 255, 255, 0.06);
   border-radius: 3px;
   overflow: hidden;
-  margin-bottom: 6px;
 }
 
-.score-bar-fill {
+.rubric-section-bar-fill {
   height: 100%;
   border-radius: 3px;
   transition: width 0.8s ease-out;
 }
 
-.score-feedback {
+/* ─── Rubric Items (expanded) ─── */
+.rubric-items {
+  padding: 4px 24px 16px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: expandIn 0.2s ease-out;
+}
+
+@keyframes expandIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.auto-fail-reason {
+  padding: 8px 14px;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  border-radius: 6px;
   font-size: 0.8rem;
-  color: var(--text-muted);
+  color: var(--accent-red);
   line-height: 1.5;
 }
 
-/* Feedback Grid */
+.rubric-item {
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+
+.rubric-item.failed {
+  border-color: rgba(248, 113, 113, 0.2);
+  background: rgba(248, 113, 113, 0.03);
+}
+
+.rubric-item.passed {
+  border-color: rgba(52, 211, 153, 0.15);
+}
+
+.rubric-item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rubric-item-status {
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.rubric-item-criterion {
+  flex: 1;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.rubric-item-points {
+  font-size: 0.82rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.rubric-item-evidence {
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: rgba(99, 102, 241, 0.06);
+  border-radius: 4px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  font-style: italic;
+  border-left: 2px solid rgba(99, 102, 241, 0.3);
+}
+
+.evidence-label {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-right: 4px;
+}
+
+.rubric-item-deduction {
+  margin-top: 4px;
+  font-size: 0.76rem;
+  color: var(--accent-amber);
+  line-height: 1.4;
+}
+
+/* ═══ FNOL Completeness Section ═══ */
+.fnol-completeness-section {
+  padding: 20px 28px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.fnol-completeness-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.fnol-completeness-header h4 {
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.fnol-completeness-score {
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.fnol-points-detail {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+.fnol-completeness-bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+
+.fnol-completeness-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.8s ease-out;
+}
+
+.fnol-fields-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fnol-field-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-subtle);
+}
+
+.fnol-field-item.collected {
+  border-color: rgba(52, 211, 153, 0.15);
+}
+
+.fnol-field-item.missing {
+  border-color: rgba(248, 113, 113, 0.15);
+  background: rgba(248, 113, 113, 0.03);
+}
+
+.fnol-field-status {
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.fnol-field-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.fnol-field-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.fnol-field-value {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.fnol-field-value.not-collected {
+  color: rgba(248, 113, 113, 0.7);
+  font-style: italic;
+}
+
+.fnol-field-pts {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ─── Feedback Grid ─── */
 .feedback-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1775,35 +2166,19 @@ body {
   color: var(--accent-amber);
 }
 
-/* Compliance & Coaching */
-.compliance-section,
+/* ─── Coaching Section ─── */
 .coaching-section {
   padding: 16px 28px;
-  border-bottom: 1px solid var(--border-subtle);
 }
 
-.compliance-section:last-child,
 .coaching-section:last-child {
   border-bottom: none;
 }
 
-.compliance-section h4,
 .coaching-section h4 {
   font-size: 0.85rem;
   font-weight: 600;
   margin-bottom: 8px;
-}
-
-.compliance-section ul {
-  list-style: none;
-  padding: 0;
-}
-
-.compliance-section li {
-  font-size: 0.82rem;
-  color: var(--accent-amber);
-  padding: 4px 0;
-  line-height: 1.5;
 }
 
 .coaching-section p {
