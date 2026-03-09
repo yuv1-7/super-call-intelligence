@@ -15,6 +15,7 @@ async def intent_node(state: dict) -> dict:
     """
     result = await classify_intent(state["transcript"])
     return {
+        "english_translation": result.get("english_translation", state["transcript"]),
         "intent": result.get("intent", "general_inquiry"),
         "claim_type": result.get("claim_type", "general"),
     }
@@ -63,8 +64,8 @@ async def knowledge_node(state: dict) -> dict:
     """
     Retrieve relevant knowledge articles based on the full transcript and claim type.
     """
-    # Use full transcript for better keyword matching, fall back to current utterance
-    query = state.get("full_transcript") or state["transcript"]
+    # Use the english_translation for better keyword matching on english knowledge bases
+    query = state.get("english_translation") or state.get("full_transcript") or state["transcript"]
     category = state.get("claim_type")
     docs = search_knowledge(query, category=category)
     return {"knowledge_docs": docs}

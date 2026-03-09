@@ -85,10 +85,7 @@ export function useDeepgramSpeech({ onTranscript }) {
                     model: 'nova-3',
                     language: 'multi',
                     multichannel: 'true',
-                    channels: '2',
-                    smart_format: 'true',
-                    interim_results: 'true',
-                    endpointing: '2000',
+                    endpointing: '1500',              // Lowered to 1500ms for near real-time latency
                     encoding: 'linear16',
                     sample_rate: '16000',
                 });

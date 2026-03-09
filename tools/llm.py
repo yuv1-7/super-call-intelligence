@@ -21,6 +21,7 @@ FAST_MODEL = "gpt-4.1-nano"     # For utility calls: intent, entity, fact extrac
 # ═══════════════════════════════════════════════════════
 
 class IntentClassification(BaseModel):
+    english_translation: str
     intent: Literal[
         "car_accident",
         "car_theft",
@@ -79,7 +80,13 @@ class ScoredSection(BaseModel):
 
 class RubricEvaluation(BaseModel):
     """LLM Call A output — rubric scoring with evidence."""
-    sections: list[ScoredSection]
+    section_1_opening: ScoredSection
+    section_2_identity: ScoredSection
+    section_3_information: ScoredSection
+    section_4_empathy: ScoredSection
+    section_5_procedure: ScoredSection
+    section_6_compliance: ScoredSection
+    section_7_close: ScoredSection
     auto_fails: list[str]          # list of triggered auto-fail descriptions
 
 
@@ -102,7 +109,8 @@ async def classify_intent(transcript: str) -> dict:
     """Use LLM to classify the caller's intent into an FNOL category."""
 
     system_prompt = """You are an insurance call classification system.
-Analyze the caller's statement and classify it.
+Analyze the caller's statement (which may be in English, another language, or a mix of languages) and classify it.
+- "english_translation": an accurate English translation of what the caller said (if they spoke in English, just repeat it).
 - "intent": the most fitting FNOL category.
 - "claim_type": the broad insurance line the intent falls under."""
 
@@ -113,7 +121,7 @@ Analyze the caller's statement and classify it.
             {"role": "user", "content": transcript},
         ],
         temperature=0.0,
-        max_tokens=100,
+        max_tokens=150,
         response_format=IntentClassification,
     )
 
@@ -128,10 +136,10 @@ async def extract_entities(transcript: str) -> dict:
     """Use LLM to extract names, phone numbers, and policy IDs from transcript."""
     
     system_prompt = """You are an insurance entity extraction system.
-Analyze the caller's statement and extract the following if present:
-- "policy_id": formatted as CAR-XXXXXX or LIFE-XXXXXX (fix spacing/hyphens if spoken like "car 12345").
+Analyze the caller's statement (which may be in any language, or a mix of languages) and extract the following if present. Your output must be in English:
+- "policy_id": formatted strictly as CAR-XXXXXX or LIFE-XXXXXX. If the user speaks the numbers in another language (e.g., Hindi "ek do teen"), you MUST translate them to English digits (123).
 - "name": full or partial name of the caller.
-- "phone": phone number referenced. Ensure you capture full or even partial phone numbers spoken.
+- "phone": phone number referenced. You MUST translate any spoken numbers into English digits.
 Return null for fields not found."""
 
     response = await client.beta.chat.completions.parse(
@@ -169,7 +177,8 @@ Be generous in extraction — if someone says "at City General Hospital", that I
 Do NOT leave a field null if the information was mentioned even casually or indirectly.
 
 CRITICAL — Data Quality & Normalization:
-- The transcript comes from speech-to-text and may contain spelling errors, phonetic misspellings, or garbled text.
+- The transcript comes from speech-to-text and may contain spelling errors, phonetic misspellings, garbled text, or a mix of multiple languages.
+- You must understand the context regardless of the language and write your extracted facts strictly in English.
 - You MUST normalize and clean all extracted values:
   * Fix obvious spelling mistakes (e.g., "Feburary" → "February", "hosptial" → "Hospital")
   * Capitalize proper nouns correctly (names, cities, hospitals, roads, etc.)
@@ -232,17 +241,13 @@ Your role is to guide the agent through the conversation naturally, handling Fir
 Generate a professional, empathetic, and compliance-aware suggested response for the agent to say to the caller.
 
 Core Rules:
-- **MULTILINGUAL & PHONETIC OUPTUT (CRITICAL LAYER)**: 
-  * You MUST analyze the transcript to detect the language, dialect, and manner in which the caller is speaking (e.g., English, Hindi, Punjabi, or a mix like Hinglish).
-  * You MUST generate your suggested response in that EXACT SAME language and manner so the agent can respond authentically.
-  * HOWEVER, the agent reading your prompt ONLY reads the English alphabet. Therefore, you MUST write your entire response using the English alphabet (Romanized/Phonetic).
-  * STRICT NEGATIVE CONSTRAINT: NEVER output text in Devanagari (e.g., नमस्ते), Gurmukhi (e.g., ਸਤਿ ਸ੍ਰੀ ਅਕਾਲ), or any non-English script.
-  * CRITICAL RULE - MODERN CONVERSATIONAL TONE: DO NOT be robotic or overly formal. Real people speaking Hindi, Punjabi, or Hinglish in the modern age constantly mix and match English words (like "accident", "process", "claim", "number", "hospital") into their sentences naturally. Mirror this exact modern style. 
-  * CRITICAL RULE - NO TEXTBOOK TRANSLATIONS: DO NOT literally translate formal English phrases (like "Have a good day" or "How can I help you today") into poor, unnatural Hindi/Punjabi (like "Aapka din shubh mangal rahe"). Use extremely natural, colloquial Hinglish/Punjabi.
-  * If wrapping up a Hinglish call, just say "Theek hai, thank you. Aur koi help chahiye aapko?" instead of a robotic translation.
-  * Example 1: If caller speaks pure Hindi -> Output: "Namaste, mera naam Amit hai. Main aapki kya madad kar sakta hoon?" (Phonetic Hindi)
-  * Example 2: If caller speaks Hinglish -> Output: "Aap theek toh hain? Accident kahan hua tha exact location bata sakte hain?" (Phonetic Hinglish)
-  * Example 3: If caller speaks Punjabi -> Output: "Ki haal hai ji? Tusi theek ho? Koi fikar na karo, hum process start kar dete hain." (Phonetic Punjabi/Pinglish)
+- **LANGUAGE & COLLOQUIAL TONE (CRITICAL LAYER)**: 
+  * You MUST analyze the transcript to detect the caller's language and manner (e.g., pure English, Hindi, German, mixed Hinglish).
+  * Your output language MUST perfectly match the caller's input language. If they speak 100% English, respond in 100% English. If they speak a mix, mirror that mix.
+  * ALWAYS use phonetic English (Romanized script) for your output, regardless of the language spoken. NO Devanagari, Cyrillic, or other scripts.
+  * CRITICAL RULE - MODERN & NATURAL: Do NOT use formal, "textbook" translations or overly pure vocabulary (e.g., do NOT translate "state", "accident", "process", or "insurance" into pure Hindi like "rajya", "durghatna", or "bima"). Real people use English loan words constantly. Write EXACTLY how a modern native speaker talks in daily life (e.g., "Aap kis state se hain?", "Accident kahan hua?").
+  * EMOTIONAL AWARENESS: Be naturally empathetic when appropriate (e.g., if there's an accident, ask about safety/injuries immediately), but maintain conversational flow. Don't be robotic.
+  * STRICT PROCEDURE COMPLIANCE: Your tone must be natural, but you MUST still actively drive the required insurance procedures. Do not let the conversational style cause you to skip critical FNOL steps or fail to ask required questions.
 - NEVER address the customer directly. You are writing a script/talking points FOR the agent to read verbatim.
 - **Call Recording Disclaimer**: The call recording disclaimer ("this call is being recorded") is ONLY mentioned by the AGENT at the very START of the call. If the agent has already said it (check Full Conversation Context), NEVER bring it up again later in the conversation. Make sure it is said once.
 - **Act as a helpful guide, not a strict interrogator**: Do not aggressively demand information if the user is distressed or if the details aren't immediately necessary.
@@ -250,7 +255,7 @@ Core Rules:
 - **Policy Lookup Priority**: ONLY if the Policyholder Data is "Not yet identified", ask for the policy number first to look up their account. If they cannot provide it, ask for their phone number as an alternative. You CANNOT search by name alone.
 - **Account Verification Complete**: CRITICAL RULE: ALWAYS look at the "Policyholder Data" section. If it shows ANY member details (name, policy type, etc.), YOU ALREADY HAVE THEIR ACCOUNT AND POLICY OPEN. You are permanently forbidden from asking for their policy number, phone number, or name. NEVER ask for details to "look up their account", "verify their policy", or "so I can assist you" because IT IS ALREADY VERIFIED.
 - **Lookup Failed**: If the Policyholder Data says "LOOKUP FAILED", the caller provided a policy number or phone number that did not match any account in our system. Politely inform them that you were unable to locate an account with the information provided and ask them to double-check the number. Offer alternatives (e.g., "Could you try your phone number instead?" or "Do you have the policy number handy?"). Do NOT just silently re-ask for the same info without acknowledging the failure.
-- **Role of Knowledge Docs**: The "Relevant Policy Articles" are your primary reference for facts and procedures. You MUST ensure all key points from these articles are communicated to the caller by the end of the call, SPREAD across multiple responses — ONE new topic per response. Skip steps that are already covered or irrelevant. Specifically, always look for and communicate:
+- **Role of Knowledge Docs**: The "Relevant Policy Articles" are a flexible guide, not a rigid script. You MUST ensure all key points from these articles are communicated to the caller by the end of the call, but DO NOT read them out like a machine. Weave them naturally into the conversation. SPREAD them across multiple responses — ONE new topic per response. Skip steps that are already covered or irrelevant. Specifically, always look for and communicate:
   * **Timelines** — any processing durations or response windows mentioned
   * **Required documents** — anything the caller needs to submit
   * **Payout or settlement info** — any options or amounts mentioned
@@ -268,7 +273,10 @@ Core Rules:
 - **Name Usage**: Use the caller's name AT MOST ONCE in the entire conversation — either at the initial greeting/confirmation or when verifying their identity. After that, NEVER use their name again. Saying "Thank you, Priya" or "I understand, Ravi" in every response sounds robotic and scripted. Just speak naturally without inserting names.
 - **Conversational Context**: When the agent has just asked a question and the customer responds, ALWAYS interpret the customer's reply as an answer to that question — even if the phrasing is awkward, fragmented, or sounds like a question itself (this is common in phone conversations and speech-to-text). Do NOT re-interpret their answer as a new question or topic. For example, if the agent asks "Where did it happen?" and the customer says "What happened was in the parking lot of Max Mall", the location IS "parking lot of Max Mall" — acknowledge it and move on.
 - **Reasonable Detail Level**: Accept reasonable answers without over-drilling for unnecessary precision. A location like "parking lot of Max Mall" or "MG Road intersection" is specific enough for an FNOL. Do NOT push for exact coordinates, lane numbers, or floor levels unless the caller volunteers that detail.
-- **Compliance Alerts Are Mandatory**: The "Active Compliance Alerts" are NOT optional suggestions — they are rules you MUST follow. If a CRITICAL or HIGH severity alert is active, you MUST work it into the conversation naturally at the earliest appropriate moment. For example, if HIPAA is listed, you must inform the caller that their information is protected before collecting sensitive details. Do NOT read out compliance codes or rule IDs — weave the substance naturally.
+- **COMPLIANCE ALERTS ARE YOUR NUMBER 1 PRIORITY**: The "Active Compliance Alerts" are NOT optional suggestions — they are STRICT LEGAL RULES. If an alert is present in the prompt, you MUST address it IMMEDIATELY in your very next response. For example:
+  * If "Call Recording Disclosure" is listed, you MUST say "This call is being recorded" immediately.
+  * If "HIPAA Privacy Notice" is listed, you MUST inform the caller that their medical information is protected before collecting sensitive details.
+  Do NOT delay compliance warnings. Do NOT wait for a "better time". Just weave the substance naturally into your immediate next sentence.
 - CRITICAL: NEVER ask multiple questions in a single response. ONE question at a time.
 - **No Repetition**: Check the "Full Conversation Context" carefully. If the AGENT already told the caller something (e.g., towing coverage, rental car offer, condolences), DO NOT repeat it in subsequent responses. Each response should only contain NEW, previously unsaid information or questions.
 - **Handling Multi-Part Procedures**: If the Knowledge Doc lists multiple required documents (e.g., claim form AND death certificate AND photo ID), you MUST list ALL of them together in a single sentence when informing the user. Do not split them into multiple responses. Do not skip any. Be exact.
@@ -663,6 +671,8 @@ CRITICAL CONTEXT:
 • Transcript shows [Agent] and [Customer/Caller] turns.
 • [Agent] turns = the REAL HUMAN AGENT's own words. Not AI-generated text. Not suggestions.
 • The agent had a background AI assistant showing suggestions on screen, but spoke independently.
+• The conversation may be in English, another language, or a mix of multiple languages (often written in phonetic English).
+• Regardless of the language spoken in the transcript, your entire evaluation and rubric output MUST be written strictly in English. Evaluate the meaning of the transcript accurately across any language.
 • Score ONLY what appears in actual [Agent] turns. If not said, no credit.
 • Every deduction must cite which turn was lacking or what was absent.
 
@@ -670,6 +680,7 @@ SCORING RULES:
 • Binary: full points if clearly done, 0 if not.
 • Scaled: partial credit as specified.
 • Auto-fail: sets the ENTIRE section to 0.
+• CRITICAL: Even if a section auto-fails, you MUST STILL generate and score ALL 7 SECTIONS in your response. NEVER skip sections.
 • Evidence: quote from [Agent] turn, or "Not observed in transcript".
 
 ════════════════════════════════════════════════════════════════════
@@ -781,6 +792,8 @@ CRITICAL CONTEXT:
   • [Agent] turns = the REAL HUMAN AGENT'S own spoken words. NOT AI suggestions.
   • The agent had a background AI assistant visible on their screen but spoke independently.
   • Judge ONLY what the agent actually said in [Agent] turns.
+  • The transcript may contain multiple languages, a mix of languages, or phonetic English representations of other languages. Ensure you understand and analyze the context regardless of the language used.
+  • HOWEVER, your entire evaluation, insights, and output MUST be strictly in English.
 
 ════════════════════════════════════════════════════════════════════
 FIELD INSTRUCTIONS
@@ -1074,8 +1087,16 @@ async def generate_post_call_evaluation(
         "positive_indicators":       insights_result["positive_indicators"],
         "agent_improvement_notes":   insights_result["agent_improvement_notes"],
 
-        # Rubric
-        "sections":   rubric_result["sections"],
+        # Rubric (re-bundled from explicit fields)
+        "sections": [
+            rubric_result["section_1_opening"],
+            rubric_result["section_2_identity"],
+            rubric_result["section_3_information"],
+            rubric_result["section_4_empathy"],
+            rubric_result["section_5_procedure"],
+            rubric_result["section_6_compliance"],
+            rubric_result["section_7_close"],
+        ],
         "auto_fails": rubric_result["auto_fails"],
 
         # FNOL

@@ -9,6 +9,7 @@ class AgentState(TypedDict):
     is_finalized: bool
 
     # Processing outputs
+    english_translation: Optional[str]
     intent: Optional[str]
     claim_type: Optional[str]
     entities: Optional[dict]
