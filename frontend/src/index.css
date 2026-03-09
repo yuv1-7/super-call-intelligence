@@ -1599,8 +1599,15 @@ body {
 }
 
 @keyframes bannerPulse {
-  0%, 100% { background: rgba(248, 113, 113, 0.12); }
-  50% { background: rgba(248, 113, 113, 0.18); }
+
+  0%,
+  100% {
+    background: rgba(248, 113, 113, 0.12);
+  }
+
+  50% {
+    background: rgba(248, 113, 113, 0.18);
+  }
 }
 
 .auto-fail-icon {
@@ -1929,8 +1936,15 @@ body {
 }
 
 @keyframes expandIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .auto-fail-reason {
@@ -2623,5 +2637,946 @@ body {
 
   .app-header .header-brand .app-logo {
     height: 28px;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   PostCallCard v3 — pcc-* namespace
+   Add to: frontend/src/index.css
+   ════════════════════════════════════════════════════════════════ */
+
+/* Root */
+.pcc-root {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+  font-size: 0.84rem;
+  color: #e2e8f0;
+}
+
+/* Banners */
+.pcc-banners {
+  display: flex;
+  flex-direction: column;
+}
+
+.pcc-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 16px;
+  font-size: 0.81rem;
+  line-height: 1.5;
+}
+
+.pcc-banner>span {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.pcc-banner strong {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.pcc-banner p {
+  margin: 0;
+  opacity: 0.85;
+}
+
+.pcc-banner--fail {
+  background: rgba(248, 113, 113, 0.12);
+  border-bottom: 1px solid rgba(248, 113, 113, 0.22);
+  color: #fca5a5;
+}
+
+/* Score header */
+.pcc-header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  flex-wrap: wrap;
+}
+
+.pcc-score-block {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.pcc-score-ring {
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  border: 3px solid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pcc-score-num {
+  font-size: 1.45rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.pcc-score-denom {
+  font-size: 0.62rem;
+  opacity: 0.45;
+}
+
+.pcc-grade-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pcc-grade-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.pcc-call-type-label {
+  font-size: 0.76rem;
+  opacity: 0.58;
+  margin-top: 1px;
+}
+
+.pcc-outcome-label {
+  font-size: 0.74rem;
+  opacity: 0.65;
+}
+
+.pcc-kpi-row {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.pcc-kpi {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 7px;
+  padding: 5px 9px;
+  min-width: 52px;
+}
+
+.pcc-kpi-v {
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.pcc-kpi-l {
+  font-size: 0.6rem;
+  opacity: 0.45;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Tab bar */
+.pcc-tabbar {
+  display: flex;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.12);
+  overflow-x: auto;
+}
+
+.pcc-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 15px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.77rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+.pcc-tab:hover {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.pcc-tab--on {
+  color: var(--tc, #60a5fa);
+  border-bottom-color: var(--tc, #60a5fa);
+}
+
+/* Body */
+.pcc-body {
+  padding: 0;
+}
+
+.pcc-tab-content {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Card blocks */
+.pcc-card-block {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  padding: 13px 15px;
+}
+
+.pcc-card-block--compact {
+  padding: 11px 15px;
+}
+
+/* Section headers */
+.pcc-sh {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: rgba(255, 255, 255, 0.38);
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pcc-sh-sub {
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  opacity: 0.7;
+}
+
+.pcc-label-xs {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.32);
+}
+
+/* Prose */
+.pcc-prose {
+  margin: 0 0 9px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 0.83rem;
+}
+
+.pcc-prose--sm {
+  font-size: 0.8rem;
+}
+
+.pcc-prose:last-child {
+  margin-bottom: 0;
+}
+
+.pcc-text-dim {
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.pcc-text-sm {
+  font-size: 0.77rem;
+}
+
+/* Fields */
+.pcc-caller-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pcc-caller-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+
+.pcc-f {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pcc-f-label {
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.3);
+  font-weight: 600;
+}
+
+.pcc-f-val {
+  font-size: 0.81rem;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.4;
+}
+
+/* Difficulty panel */
+.pcc-diff-panel {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 10px;
+}
+
+.pcc-diff-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.pcc-diff-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.pcc-diff-pip {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.pcc-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.pcc-tag {
+  padding: 2px 7px;
+  border-radius: 11px;
+  font-size: 0.7rem;
+}
+
+.pcc-tag--amber {
+  background: rgba(251, 191, 36, 0.1);
+  color: #fde68a;
+  border: 1px solid rgba(251, 191, 36, 0.2);
+}
+
+/* Talk bar */
+.pcc-talk-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.pcc-talkbar {
+  height: 7px;
+  border-radius: 4px;
+  display: flex;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.pcc-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+/* Events timeline */
+.pcc-events {
+  display: flex;
+  flex-direction: column;
+}
+
+.pcc-event {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  position: relative;
+  padding-bottom: 13px;
+}
+
+.pcc-event:last-child {
+  padding-bottom: 0;
+}
+
+.pcc-event-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.62rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.pcc-event-connector {
+  position: absolute;
+  left: 9px;
+  top: 20px;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.pcc-event:last-child .pcc-event-connector {
+  display: none;
+}
+
+.pcc-event-text {
+  font-size: 0.81rem;
+  color: rgba(255, 255, 255, 0.7);
+  padding-top: 2px;
+  line-height: 1.5;
+}
+
+/* FNOL */
+.pcc-fnol-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.pcc-fnol-pct {
+  font-size: 1.4rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.pcc-progress-track {
+  height: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 3px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.pcc-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s;
+}
+
+.pcc-fnol-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.pcc-fnol-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  font-size: 0.78rem;
+}
+
+.pcc-fnol-row--ok {
+  background: rgba(52, 211, 153, 0.07);
+  border: 1px solid rgba(52, 211, 153, 0.14);
+}
+
+.pcc-fnol-row--miss {
+  background: rgba(248, 113, 113, 0.06);
+  border: 1px solid rgba(248, 113, 113, 0.11);
+}
+
+.pcc-fnol-name {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.pcc-pts-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.pcc-pts-badge--ok {
+  background: rgba(52, 211, 153, 0.14);
+  color: #34d399;
+}
+
+.pcc-pts-badge--miss {
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
+}
+
+/* Section score bars */
+.pcc-sec-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 7px;
+}
+
+.pcc-sec-row:last-child {
+  margin-bottom: 0;
+}
+
+.pcc-sec-name {
+  font-size: 0.78rem;
+  flex: 0 0 190px;
+  color: rgba(255, 255, 255, 0.68);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pcc-sec-track {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.pcc-sec-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s;
+}
+
+.pcc-sec-pts {
+  font-size: 0.77rem;
+  font-weight: 700;
+  flex: 0 0 40px;
+  text-align: right;
+}
+
+/* Chip */
+.pcc-chip {
+  font-size: 0.58rem;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid;
+  letter-spacing: 0.04em;
+}
+
+.pcc-chip--fail {
+  background: rgba(248, 113, 113, 0.15);
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+/* Skill observations */
+.pcc-observations {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pcc-obs {
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pcc-obs--positive {
+  background: rgba(52, 211, 153, 0.05);
+  border-color: rgba(52, 211, 153, 0.14);
+}
+
+.pcc-obs--negative {
+  background: rgba(248, 113, 113, 0.05);
+  border-color: rgba(248, 113, 113, 0.12);
+}
+
+.pcc-obs--neutral {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pcc-obs-top {
+  margin-bottom: 4px;
+}
+
+.pcc-obs-area {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pcc-obs-text {
+  font-size: 0.81rem;
+  color: rgba(255, 255, 255, 0.78);
+  margin: 0 0 4px;
+  line-height: 1.5;
+}
+
+.pcc-obs-impact {
+  font-size: 0.76rem;
+  color: rgba(255, 255, 255, 0.44);
+  margin: 0;
+  line-height: 1.45;
+  font-style: italic;
+}
+
+/* Insight lists */
+.pcc-insight-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.pcc-insight-item {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  padding: 7px 10px;
+  border-radius: 7px;
+  border-left: 2px solid;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.pcc-insight-item--pos {
+  border-color: #34d399;
+  background: rgba(52, 211, 153, 0.06);
+}
+
+.pcc-insight-item--neg {
+  border-color: #f97316;
+  background: rgba(249, 115, 22, 0.06);
+}
+
+/* Pattern indicators */
+.pcc-indicator {
+  display: flex;
+  gap: 8px;
+  font-size: 0.79rem;
+  line-height: 1.4;
+  padding: 6px 9px;
+  border-radius: 7px;
+  margin-bottom: 6px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.pcc-indicator>span {
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.pcc-indicator--pos {
+  background: rgba(52, 211, 153, 0.07);
+}
+
+.pcc-indicator--risk {
+  background: rgba(249, 115, 22, 0.07);
+}
+
+/* 2-up layout */
+.pcc-2up {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* QA Scorecard */
+.pcc-qa-sec {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 9px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.pcc-qa-sec:last-child {
+  margin-bottom: 0;
+}
+
+.pcc-qa-sec--fail {
+  border-color: rgba(248, 113, 113, 0.22);
+}
+
+.pcc-qa-hdr {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 13px;
+  background: rgba(255, 255, 255, 0.04);
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.pcc-qa-hdr:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.pcc-qa-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.pcc-qa-right {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.pcc-chevron {
+  font-size: 0.72rem;
+  opacity: 0.45;
+}
+
+.pcc-qa-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.pcc-mini-bar {
+  width: 56px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.pcc-qa-body {
+  padding: 8px 13px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.pcc-autofail-note {
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  color: #fca5a5;
+  font-size: 0.77rem;
+  padding: 7px 10px;
+  border-radius: 6px;
+}
+
+/* Rubric items */
+.pcc-ri {
+  padding: 7px 9px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.pcc-ri--pass {
+  background: rgba(52, 211, 153, 0.05);
+  border-color: rgba(52, 211, 153, 0.11);
+}
+
+.pcc-ri--fail {
+  background: rgba(248, 113, 113, 0.04);
+  border-color: rgba(248, 113, 113, 0.09);
+}
+
+.pcc-ri-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.pcc-ri-criterion {
+  flex: 1;
+  font-size: 0.79rem;
+  color: rgba(255, 255, 255, 0.76);
+  line-height: 1.4;
+}
+
+.pcc-evidence {
+  margin-top: 5px;
+  font-size: 0.74rem;
+  color: rgba(255, 255, 255, 0.42);
+  padding-left: 18px;
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.pcc-ev-label {
+  font-style: normal;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.pcc-absent {
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: rgba(248, 113, 113, 0.45);
+  padding-left: 18px;
+}
+
+.pcc-deduction {
+  margin-top: 4px;
+  font-size: 0.74rem;
+  color: #fde68a;
+  padding-left: 18px;
+  line-height: 1.4;
+  opacity: 0.85;
+}
+
+/* Compliance */
+.pcc-ok-note {
+  font-size: 0.82rem;
+  color: #34d399;
+  padding: 8px;
+  background: rgba(52, 211, 153, 0.07);
+  border-radius: 7px;
+}
+
+.pcc-compliance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.pcc-cflag {
+  padding: 9px 12px;
+  border-left: 3px solid;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 0 7px 7px 0;
+}
+
+.pcc-cflag-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 5px;
+}
+
+.pcc-cflag-type {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.pcc-risk-note {
+  font-size: 0.74rem;
+  color: rgba(255, 255, 255, 0.38);
+  margin-top: 5px;
+  font-style: italic;
+}
+
+/* Missed opportunities */
+.pcc-mo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pcc-mo {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.pcc-mo-when {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+  padding: 6px 11px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pcc-mo-body {
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pcc-mo-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pcc-mo-row--better {
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Agent improvement notes */
+.pcc-improve-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.pcc-improve-note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 11px;
+  background: rgba(96, 165, 250, 0.06);
+  border: 1px solid rgba(96, 165, 250, 0.14);
+  border-radius: 8px;
+}
+
+.pcc-improve-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .pcc-caller-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .pcc-2up {
+    grid-template-columns: 1fr;
+  }
+
+  .pcc-fnol-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pcc-sec-name {
+    flex: 0 0 120px;
+  }
+
+  .pcc-kpi-row {
+    gap: 4px;
+  }
+
+  .pcc-tab {
+    padding: 9px 11px;
+    font-size: 0.72rem;
   }
 }

@@ -485,51 +485,56 @@ async def generate_agent_suggestion_stream(
         if delta:
             yield delta
 
-# ═══════════════════════════════════════════════════════
-# POST-CALL EVALUATION — Rubric-Based Scoring System
-# ═══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# POST-CALL EVALUATION — Insight-rich, RAG-ready evaluation
+#
+# PURPOSE:
+#   These outputs are stored and later aggregated via RAG/LLM across many calls.
+#   A supervisor reviews 20-50 calls at a time across multiple agents.
+#   An agent reviews their own calls to understand exactly what to work on.
+#
+# DESIGN PRINCIPLES:
+#   - Be specific and evidence-based. No generic observations.
+#   - Each insight should be self-contained enough to be useful out of context
+#     (i.e., when a RAG system surfaces it alongside 30 other call insights).
+#   - Cite actual agent/caller turns as evidence.
+#   - The [Agent] turns = real human agent's own words. Not AI suggestions.
+#
+# ARCHITECTURE:
+#   Call A (Rubric)   → Per-criterion scoring of the human agent's actual speech
+#   Call B (Insights) → Rich qualitative analysis: caller, agent, patterns, risks
+#   Python (instant) → FNOL completeness from accumulated_facts
+# ══════════════════════════════════════════════════════════════════════════════
 
-# ─── FNOL Required Fields per Claim Type ─── #
+
+# ─── FNOL Field Definitions ───────────────────────────────────────────────────
+
 _CAR_FNOL_FIELDS = {
-    "date_of_incident":      {"label": "Date of Incident",      "points": 3},
-    "time_of_incident":      {"label": "Time of Incident",      "points": 2},
-    "location_of_incident":  {"label": "Location of Incident",  "points": 3},
-    "incident_description":  {"label": "Description",           "points": 3},
-    "vehicle_drivable":      {"label": "Vehicle Drivability",   "points": 2},
-    "police_report_filed":   {"label": "Police Report Status",  "points": 3},
-    "injuries_reported":     {"label": "Injuries Reported",     "points": 2},
+    "date_of_incident":       {"label": "Date of Incident",     "points": 3},
+    "time_of_incident":       {"label": "Time of Incident",     "points": 2},
+    "location_of_incident":   {"label": "Location of Incident", "points": 3},
+    "incident_description":   {"label": "What Happened",        "points": 3},
+    "vehicle_drivable":       {"label": "Vehicle Drivability",  "points": 2},
+    "police_report_filed":    {"label": "Police Report Filed",  "points": 3},
+    "injuries_reported":      {"label": "Injuries Reported",    "points": 2},
     "other_parties_involved": {"label": "Other Parties",        "points": 2},
 }
 
 _LIFE_FNOL_FIELDS = {
-    "caller_name":                   {"label": "Caller Identity",             "points": 2},
-    "relationship_to_policyholder":  {"label": "Relationship to Policyholder","points": 2},
-    "date_of_incident":              {"label": "Date of Death",               "points": 3},
-    "location_of_incident":          {"label": "Location of Death",           "points": 3},
-    "cause_of_death":                {"label": "Cause of Death",              "points": 3},
+    "caller_name":                  {"label": "Caller Name",                  "points": 2},
+    "relationship_to_policyholder": {"label": "Relationship to Policyholder", "points": 2},
+    "date_of_incident":             {"label": "Date of Death",                "points": 3},
+    "location_of_incident":         {"label": "Location of Death",            "points": 3},
+    "cause_of_death":               {"label": "Cause of Death",               "points": 3},
 }
 
-
-def calculate_fnol_completeness(
-    accumulated_facts: dict | None,
-    claim_type: str | None,
-) -> dict:
-    """Pure Python FNOL completeness scoring based on accumulated_facts."""
+def calculate_fnol_completeness(accumulated_facts, claim_type):
     if not accumulated_facts:
         accumulated_facts = {}
-
-    if claim_type == "life_insurance":
-        required = _LIFE_FNOL_FIELDS
-    elif claim_type in ("car_insurance",):
-        required = _CAR_FNOL_FIELDS
-    else:
-        required = _CAR_FNOL_FIELDS  # default to car
-
-    total_points = sum(f["points"] for f in required.values())
+    required = _LIFE_FNOL_FIELDS if claim_type == "life_insurance" else _CAR_FNOL_FIELDS
+    total_points  = sum(f["points"] for f in required.values())
     earned_points = 0
-    collected = []
-    missing = []
-
+    collected, missing = [], []
     for key, meta in required.items():
         val = accumulated_facts.get(key)
         if val is not None:
@@ -537,354 +542,555 @@ def calculate_fnol_completeness(
             collected.append({"field": meta["label"], "value": str(val), "points": meta["points"]})
         else:
             missing.append({"field": meta["label"], "points": meta["points"]})
-
     pct = round((earned_points / total_points) * 100) if total_points > 0 else 0
-
     return {
-        "fnol_completeness_pct": pct,
-        "fnol_points_earned": earned_points,
-        "fnol_points_possible": total_points,
-        "fnol_fields_collected": collected,
-        "fnol_fields_missing": missing,
+        "fnol_completeness_pct":  pct,
+        "fnol_points_earned":     earned_points,
+        "fnol_points_possible":   total_points,
+        "fnol_fields_collected":  collected,
+        "fnol_fields_missing":    missing,
     }
 
 
-# ─── Rubric Evaluator Prompt (Call A) ─── #
+# ── PYDANTIC SCHEMAS ──────────────────────────────────────────────────────────
 
-_RUBRIC_SYSTEM_PROMPT = """You are an expert insurance call center QA analyst using a point-deduction rubric system.
-You MUST evaluate the agent's performance using EXACTLY the rubric sections and criteria below.
-For EVERY criterion, you must:
-1. Award points (0 to max) based on evidence from the transcript
-2. Set passed=true only if FULL points are awarded
-3. Provide a direct quote from the transcript as evidence, or "Not found" if the behavior was absent
-4. Provide a deduction_reason if points were lost (null if full points awarded)
+class RubricItem(BaseModel):
+    criterion:        str
+    points_possible:  int
+    points_awarded:   int
+    passed:           bool
+    evidence:         str        # Direct quote from [Agent] turn, or "Not observed"
+    deduction_reason: str | None
 
-CRITICAL AUTO-FAIL RULES:
-- If an auto-fail is triggered, set auto_failed=true on that section and set points_awarded=0 for the ENTIRE section
-- Add the auto-fail description to the top-level auto_fails list
-- Auto-fails are SERIOUS — they indicate potential legal/compliance violations
+class ScoredSection(BaseModel):
+    section_name:     str
+    points_possible:  int
+    points_awarded:   int
+    auto_failed:      bool
+    auto_fail_reason: str | None
+    rubric_items:     list[RubricItem]
 
-SCORING PRINCIPLES:
-- Be fair and evidence-based. Every deduction must cite the transcript.
-- Do NOT inflate scores. If the agent didn't do something, they get 0 for that item.
-- For scaled items (not binary), use partial credit only when partially demonstrated.
-- For binary items, it's all-or-nothing.
-- Consider the claim type context — life insurance calls require different handling than car accident calls.
+class AgentRubric(BaseModel):
+    sections:   list[ScoredSection]
+    auto_fails: list[str]
+
+
+class CallerInsights(BaseModel):
+    """Rich profile of the caller — provides context for evaluating the agent."""
+    caller_description:  str         # Who called and why (one sentence)
+    emotional_state:     str         # Observed emotion from actual caller turns
+    communication_style: str         # Language(s), formality, pace, any notable patterns
+    cooperation_level:   str         # Very cooperative / Cooperative / Somewhat difficult / Difficult / Hostile
+    difficulty_score:    int         # 1-5
+    difficulty_rationale: str        # Specific evidence for the difficulty score
+    notable_behaviors:   list[str]   # Specific caller behaviors that impacted the call (e.g. "gave wrong policy number", "broke down crying mid-call", "spoke in Hindi when distressed")
+
+
+class SkillObservation(BaseModel):
+    """A specific observed behavior — positive or negative — with evidence."""
+    skill_area:  str     # e.g. "Empathy", "Information Gathering", "Compliance", "Product Knowledge"
+    observation: str     # What specifically happened — cite the agent's actual words
+    impact:      str     # Why this mattered for this call / what effect it had
+    valence:     str     # "positive" | "negative" | "neutral"
+
+
+class ComplianceFlag(BaseModel):
+    flag_type:     str   # e.g. "Missing disclosure", "Fault implication", "HIPAA violation", "Incorrect coverage"
+    severity:      str   # "critical" | "moderate" | "minor"
+    description:   str   # What happened exactly
+    agent_quote:   str   # What the agent said (or "Not said" if omission)
+    risk:          str   # What regulatory/business risk this creates
+
+
+class MissedOpportunity(BaseModel):
+    moment:          str   # When in the call this occurred
+    what_happened:   str   # What the agent did
+    better_approach: str   # What would have been better and why
+
+
+class CallEvaluationInsights(BaseModel):
+    """
+    Complete insight report for one call.
+    Designed to be stored and aggregated via RAG across many calls.
+    """
+
+    # ── Call context ──────────────────────────────────────────────────────────
+    call_type:    str    # e.g. "Car Accident FNOL — Comprehensive, Third-Party Involved"
+    call_outcome: str    # e.g. "Claim opened", "Information provided, no claim needed", "Escalated to supervisor", "Incomplete — caller disconnected"
+    call_summary: str    # 4-6 paragraph factual account of the call — what happened, in order
+
+    # ── Caller ────────────────────────────────────────────────────────────────
+    caller_insights: CallerInsights
+
+    # ── What happened, step by step ───────────────────────────────────────────
+    call_events: list[str]    # 6-10 specific, factual chronological events. Each self-contained.
+                               # e.g. "Caller provided wrong policy number (CAR-100099); agent located account via phone lookup"
+                               # e.g. "Agent failed to ask about injuries before proceeding to document collection"
+
+    # ── Agent performance observations ────────────────────────────────────────
+    skill_observations: list[SkillObservation]   # 6-12 specific skill observations, mix of positive/negative
+    procedure_gaps: list[str]     # Steps the agent skipped or did out of order, with evidence
+    strong_moments: list[str]     # Moments the agent handled particularly well, with evidence
+
+    # ── Compliance ────────────────────────────────────────────────────────────
+    compliance_flags: list[ComplianceFlag]   # Empty if no compliance issues
+    compliance_summary: str                  # One sentence: overall compliance status for this call
+
+    # ── Missed opportunities ──────────────────────────────────────────────────
+    missed_opportunities: list[MissedOpportunity]   # 2-5 specific moments
+
+    # ── Patterns (for aggregation) ────────────────────────────────────────────
+    # These are designed to be aggregated across calls to surface recurring issues
+    recurring_risk_indicators: list[str]   # Behaviors that, if repeated, indicate a training gap
+                                            # e.g. "Stacked multiple questions in a single turn (3 instances)"
+                                            # e.g. "Did not give call recording disclosure"
+                                            # e.g. "Used caller's name excessively (5 times)"
+    positive_indicators: list[str]          # Behaviors that show skill development
+                                            # e.g. "Proactively identified and offered applicable coverage add-on"
+                                            # e.g. "Matched caller's language style when caller switched to Hindi"
+
+    # ── Agent self-improvement notes ─────────────────────────────────────────
+    # Written FOR the agent — specific and actionable
+    # No generic advice. Each point references this specific call.
+    agent_improvement_notes: list[str]      # 3-5 specific things the agent can do differently next time
+
+
+# ── RUBRIC SYSTEM PROMPT ──────────────────────────────────────────────────────
+
+_RUBRIC_SYSTEM_PROMPT = """You are a QA analyst scoring a HUMAN AGENT's actual spoken performance in an insurance call.
+
+CRITICAL CONTEXT:
+• Transcript shows [Agent] and [Customer/Caller] turns.
+• [Agent] turns = the REAL HUMAN AGENT's own words. Not AI-generated text. Not suggestions.
+• The agent had a background AI assistant showing suggestions on screen, but spoke independently.
+• Score ONLY what appears in actual [Agent] turns. If not said, no credit.
+• Every deduction must cite which turn was lacking or what was absent.
+
+SCORING RULES:
+• Binary: full points if clearly done, 0 if not.
+• Scaled: partial credit as specified.
+• Auto-fail: sets the ENTIRE section to 0.
+• Evidence: quote from [Agent] turn, or "Not observed in transcript".
+
+════════════════════════════════════════════════════════════════════
+RUBRIC
+════════════════════════════════════════════════════════════════════
+
+SECTION 1 — Opening & Compliance (12 pts)
+──────────────────────────────────────────
+A. Agent stated their name in the greeting (3 pts, binary)
+B. Call recording disclosure — "recorded" or "recording" must appear in opening (4 pts, binary)
+C. Warm and professional opening tone — not robotic, creates comfort (3 pts, scaled 0-3)
+D. Offered to help before asking for data (2 pts, binary)
+
+Evaluate ONLY the first 2-3 [Agent] turns.
+
+SECTION 2 — Account & Identity Verification (14 pts)
+──────────────────────────────────────────────────────
+A. Asked for policy number or registered phone to locate account (4 pts, binary)
+B. Confirmed account found — read back policyholder name (3 pts, binary)
+C. Handled lookup failure gracefully — offered alternatives, no dead-end (4 pts, binary | N/A = full pts if first lookup succeeded)
+D. Verified caller identity where required:
+   - Life claim: confirmed caller is listed beneficiary
+   - Car claim with policyholder calling: N/A = full pts (3 pts, binary | N/A)
+
+SECTION 3 — Information Gathering (20 pts)
+───────────────────────────────────────────
+A. Never stacked questions — one question per turn only (6 pts, scaled: -2 per stacking instance, min 0)
+   CHECK: Count [Agent] turns with more than one "?" — each is a stacking violation.
+B. Never re-asked for information already given by the caller (5 pts, scaled: -2 per repeat, min 0)
+   CHECK: Look for dates, names, locations asked again after caller already stated them.
+C. Logical question flow — no unnecessary loops or tangents (5 pts, scaled 0-5)
+D. Asked the claim-critical question:
+   Car: police report / FIR status
+   Life: full beneficiary name AND relationship to policyholder
+   (4 pts, binary)
+
+SECTION 4 — Empathy & Communication (18 pts)
+─────────────────────────────────────────────
+A. Expressed genuine empathy at the right moment — not robotic, not excessive (5 pts, scaled 0-5)
+   Life: condolences are mandatory. Car: acknowledgment of stress/inconvenience expected.
+B. Did NOT repeat condolences or apologies mechanically more than twice (3 pts, binary: 0 if violated)
+C. Used caller's name no more than twice total across the call (2 pts, binary: 0 if >2 uses)
+D. Tone and language matched caller's emotional state and communication style (5 pts, scaled 0-5)
+E. Language clear and jargon-free — explained any insurance terminology used (3 pts, scaled 0-3)
+
+SECTION 5 — Product Knowledge & Procedure (18 pts)
+────────────────────────────────────────────────────
+A. Explained correct next steps clearly — what happens after this call (5 pts, scaled 0-5)
+B. Accurately assessed applicable coverage from policy data:
+   Car: correct on towing/rental based on add-ons actually in policy
+   Life: correct on payout structure/beneficiary if visible
+   (4 pts, binary | N/A = full pts if policy not located)
+C. Communicated all required documents in ONE complete response:
+   Car: police report + repair estimate + photos
+   Life: death certificate + claim form + govt ID
+   (5 pts, binary: 0 if split across multiple turns or incomplete)
+D. Gave realistic processing timeline (4 pts, binary)
+   Car: adjuster callback 24-48 hrs
+   Life: 30-60 day processing, mention of payout options
+
+SECTION 6 — Compliance (18 pts)
+─────────────────────────────────
+FOR CAR CLAIMS:
+A. ⚠️ AUTO-FAIL TRIGGER: Agent NEVER implied caller should admit, accept, or indicate fault (6 pts)
+   LOOK FOR: "just say it was your fault", "admit", "don't mention X", or any fault implication.
+   If triggered → Section 6 = 0 pts total.
+B. Did NOT promise specific payout amounts not confirmed in policy (4 pts, binary)
+C. Handled police report question correctly — asked once, accepted answer, no pressure (4 pts, binary)
+D. Noted or questioned any obvious fraud indicators, conflicting story elements, or suspicious details
+   (4 pts, binary | N/A = full pts if nothing suspicious)
+
+FOR LIFE CLAIMS:
+A. ⚠️ AUTO-FAIL TRIGGER: Privacy/HIPAA notice given BEFORE collecting any cause-of-death or medical info (6 pts)
+   If missing → Section 6 = 0 pts total.
+B. Did NOT disclose policy benefit amounts to unverified caller (4 pts, binary)
+C. Flagged contestability period or beneficiary dispute if applicable (4 pts, binary | N/A)
+D. Handled cause-of-death question sensitively — did not probe unnecessarily (4 pts, scaled 0-4)
+
+SECTION 7 — Call Resolution & Close (10 pts)
+──────────────────────────────────────────────
+A. Summarized next steps before ending — caller knows what to expect (4 pts, scaled 0-4)
+B. Asked "Is there anything else?" or equivalent (3 pts, binary)
+C. Clean professional close — no abruptness, no trailing (3 pts, scaled 0-3)
+
+════════════════════════════════════════════════════════════════════
+Return structured AgentRubric. Evidence must be a direct agent quote or "Not observed in transcript".
 """
 
 
-def _build_rubric_criteria(claim_type: str | None) -> str:
-    """Build the rubric criteria section of the prompt based on claim type."""
+# ── INSIGHTS SYSTEM PROMPT ────────────────────────────────────────────────────
 
-    base = """
-═══ SECTION 1: Opening Protocol (10 pts) ═══
-| Criterion | Points | Type |
-|-----------|--------|------|
-| Proper greeting with agent name + company name stated | 3 | Binary |
-| Call recording disclosure given | 4 | Binary |
-| Warm, professional tone in opening | 3 | Scaled (0-3) |
+_INSIGHTS_SYSTEM_PROMPT = """You are writing a detailed call evaluation for an insurance call center.
 
-EVALUATION SCOPE: Scan ONLY the first 3 agent utterances.
-Check for: name introduction, "Super Insurance" or company mention, "recorded" keyword, and assess warmth/professionalism of opening lines.
+AUDIENCE AND PURPOSE:
+  • A supervisor will review this alongside evaluations of 20-50+ other calls from multiple agents.
+    They are looking for patterns across calls — recurring compliance gaps, skill deficits, standout performance.
+  • An agent will read their own evaluation to understand exactly what they did and what to do differently.
+  • This data will be stored and queried via RAG/LLM to surface agent-level trends over time.
 
-═══ SECTION 2: Verification & Account Handling (15 pts) ═══
-| Criterion | Points | Type |
-|-----------|--------|------|
-| Attempted to locate account (policy ID or phone) | 4 | Binary |
-| Account successfully identified | 3 | Binary |
-| Caller identity verified against records | 4 | Binary |
-| Handled failed lookup gracefully (if applicable, N/A = full points) | 4 | Binary/N-A |
+BECAUSE OF THIS:
+  • Every observation must be self-contained — it should make full sense when read in isolation,
+    without the transcript. Include enough context in each point.
+  • Be specific. Generic observations ("agent lacked empathy") are useless for aggregation.
+    Specific ones ("agent said 'okay okay okay' and moved to next question while caller was mid-sentence about the accident, cutting them off twice") aggregate into a clear pattern.
+  • Cite actual words. If you say the agent handled something well or poorly, quote what they said.
+  • Do not pad. Only include observations that are genuinely informative.
 
-EVALUATION: Check if account was located (from context of conversation), if agent confirmed caller's name, and how agent handled any lookup failure. If lookup wasn't needed or failed lookup didn't occur, award full points for graceful handling.
+CRITICAL CONTEXT:
+  • [Agent] turns = the REAL HUMAN AGENT'S own spoken words. NOT AI suggestions.
+  • The agent had a background AI assistant visible on their screen but spoke independently.
+  • Judge ONLY what the agent actually said in [Agent] turns.
 
-═══ SECTION 3: Empathy & Communication (20 pts) ═══
-| Criterion | Points | Type |
-|-----------|--------|------|
-| Expressed genuine sympathy/condolences at first relevant moment | 5 | Binary |
-| Did NOT repeat apologies robotically (max 2 empathy statements OK) | 3 | Binary (deduct if >2 apologies) |
-| Did NOT overuse caller's name (max 1 usage after initial greeting) | 2 | Binary (deduct if violated) |
-| Asked one question at a time throughout call | 5 | Scaled (deduct 1pt per violation, min 0) |
-| Response tone matched caller's emotional state | 5 | Scaled (0-5) |
+════════════════════════════════════════════════════════════════════
+FIELD INSTRUCTIONS
+════════════════════════════════════════════════════════════════════
 
-EVALUATION: Count empathy statements ("sorry", "condolences", etc). Count name usage. Check for multi-question responses. Assess tone appropriateness from word choice and phrasing.
+call_type:
+  Concise descriptor of the call type and complexity.
+  Examples:
+  "Car Accident FNOL — Comprehensive Policy, Third-Party Fled Scene, No Injuries"
+  "Life Insurance Death Claim — Term Policy, Beneficiary Is Spouse, Cause: Natural"
+  "Car Claim — Policy Not Located, Caller Referred to Branch"
+
+call_outcome:
+  What actually happened by end of call. Be specific.
+  Examples:
+  "Claim registered successfully; adjuster callback communicated as next step"
+  "FNOL incomplete — caller disconnected before providing incident location"
+  "Policy not located; caller advised to visit branch with original documents"
+  "Escalated to supervisor — caller disputed coverage terms"
+
+call_summary — 4-6 paragraphs covering:
+  P1: Who called, why, what type of event, whether policy was located, caller's relationship to the policy.
+  P2: How the caller communicated — emotional state, language, cooperation, what made this call easy or difficult. Cite specific caller turns.
+  P3: How the agent handled it — structure, control of conversation, how they responded to the hardest moment of this call. Cite specific agent turns.
+  P4: What information was exchanged — what FNOL data was collected, what services were offered, what next steps were communicated, what was missed or incorrect.
+  P5: How the call ended — caller's understanding of next steps, any open items, any commitments made.
+  P6 (only if needed): Any notable compliance, fraud, or unusual events worth flagging.
+
+caller_insights:
+  Based ONLY on [Customer/Caller] turns.
+  • caller_description: One sentence — who are they and why are they calling?
+  • emotional_state: What emotion(s) were observed? What specific language/behavior shows this?
+  • communication_style: Language(s) used, formality level, pace. Did style change during call?
+  • cooperation_level: Choose exactly one: Very cooperative / Cooperative / Somewhat difficult / Difficult / Hostile
+  • difficulty_score: 
+      1 = Routine — clear, calm, gave info readily, no complications
+      2 = Mild — one small complication (e.g. slight impatience, one wrong detail)
+      3 = Moderate — required extra effort (emotional caller, language barrier, had to prompt repeatedly)
+      4 = Difficult — multiple complications, evasive, pressuring, information had to be extracted
+      5 = Very challenging — hostile, refused to cooperate, created compliance or safety risk
+  • difficulty_rationale: 2-3 sentences with specific evidence from caller turns
+  • notable_behaviors: List only behaviors that meaningfully impacted the call — things a supervisor would want to know about. Empty list if nothing notable.
+
+call_events — 6-10 items:
+  Factual, chronological, specific. Each event must be self-contained.
+  INCLUDE: account lookup outcome, every major piece of information gathered, every decision made (coverage assessed, service offered, escalation triggered), compliance disclosures made or missed, how the call ended.
+  GOOD: "Caller initially gave policy number CAR-100099 (incorrect); agent searched by phone number and located account CAR-100001 under Priya Sharma"
+  GOOD: "Agent offered towing service after identifying Roadside Assistance add-on in policy — caller accepted"
+  GOOD: "Agent did not ask about injuries before moving to document collection — skipped Section 3D of FNOL procedure"
+  BAD: "Agent collected caller information" (too vague)
+
+skill_observations — 6-12 items:
+  Mix of positive and negative. Each must be specific and evidence-based.
+  skill_area: One of — Opening & Compliance | Account Handling | Information Gathering | Empathy | Communication Clarity | Product Knowledge | Procedure | Call Control | Compliance Adherence
+  observation: Exactly what happened — quote the agent's words.
+  impact: Why it mattered for this specific call.
+  valence: "positive" | "negative" | "neutral"
+
+  GOOD negative: 
+    skill_area: "Information Gathering"
+    observation: "Agent asked 'What time was it? And was anyone hurt? And did you call the police?' in a single turn — three questions stacked."
+    impact: "Caller only answered the last question (police) — agent had to re-ask about time and injuries later, extending the call and creating confusion."
+    valence: "negative"
+
+  GOOD positive:
+    skill_area: "Product Knowledge"
+    observation: "When caller mentioned car was 'completely smashed and won't start', agent immediately checked policy add-ons and said 'I can see you have Roadside Assistance — let me arrange towing for you, you won't need to call separately.'"
+    impact: "Proactively solved a problem the caller hadn't even raised yet — demonstrates strong policy knowledge and customer focus."
+    valence: "positive"
+
+procedure_gaps — list of steps skipped/missed:
+  Only include actual procedural gaps with evidence.
+  Example: "Did not give call recording disclosure in opening — absent from all first 3 [Agent] turns"
+  Example: "Did not ask about injuries before proceeding to document collection (FNOL step 3D)"
+  Empty list if no gaps.
+
+strong_moments — list of well-handled moments:
+  Specific moments where agent performance was above expectation.
+  Each must cite agent's actual words.
+  Empty list if nothing stands out.
+
+compliance_flags:
+  Only include actual compliance issues — not near-misses or best-practice gaps.
+  flag_type: Short label for the type of issue.
+  severity: "critical" (regulatory/legal risk), "moderate" (process violation), "minor" (documentation gap)
+  description: What happened — be precise.
+  agent_quote: What the agent said, or "Not said — omission" for missing disclosures.
+  risk: What specific risk this creates (e.g. "Regulatory risk under IRDAI guidelines", "Unenforceable commitment to caller", "Recording may be inadmissible").
+
+compliance_summary:
+  One sentence summarizing the compliance status.
+  Examples:
+  "No compliance issues identified."
+  "Critical: call recording disclosure absent from opening — all other compliance criteria met."
+  "Auto-fail: HIPAA/privacy notice was not given before collecting cause-of-death information."
+
+missed_opportunities — 2-5 items:
+  Moments where agent performance was adequate but a better response was available.
+  Focus on opportunities where taking the better approach would have meaningfully improved the outcome.
+  moment: When in the call this occurred (e.g. "After confirming vehicle was undrivable")
+  what_happened: What the agent actually did/said
+  better_approach: What would have been better and specifically why — what outcome would it have achieved?
+
+recurring_risk_indicators:
+  Behaviors that, if they show up across multiple calls from this agent, indicate a training gap.
+  Write each as a standalone observation that can be counted/aggregated.
+  Examples:
+  "Question stacking: asked multiple questions in a single turn (occurred 3 times in this call)"
+  "Missing call recording disclosure in opening"
+  "Repeated caller's name 4 times — over-familiarization"
+  "Condolences delivered robotically and repeated 3 times"
+  "Processing timeline not communicated before close"
+  Only include behaviors that were actually observed. Empty list if none.
+
+positive_indicators:
+  Behaviors that show developing or strong skill — worth tracking across calls.
+  Examples:
+  "Proactively identified and applied coverage add-on without being asked"
+  "Maintained calm professional tone throughout an emotionally difficult death claim call"
+  "Correctly pivoted to phone-number lookup when policy number failed"
+  Empty list if none.
+
+agent_improvement_notes — 3-5 items:
+  Written directly FOR the agent. Specific to THIS call. No generic advice.
+  Should help them understand exactly what to do differently.
+  Format: "[What you did] — [Why it created a problem] — [What to do instead]"
+  
+  GOOD: "You asked three questions in one turn twice ('What time? Any injuries? Police called?') — when you stack questions, callers tend to answer only the last one or give partial answers to all of them, which means you end up having to circle back. Ask one, wait for the answer, then ask the next."
+  
+  GOOD: "When the caller mentioned they were 'really worried about the repair cost', you moved straight to asking about the police report without acknowledging it. Acknowledging that concern with one sentence ('I completely understand — let me make sure we get everything documented so the assessment can begin as quickly as possible') would have kept the caller engaged and reduced their anxiety."
+  
+  BAD: "Work on empathy skills" (too vague)
+  BAD: "Be sure to follow the FNOL checklist" (not specific to this call)
+
+════════════════════════════════════════════════════════════════════
+TONE: Analytical and factual. Written to inform, not to judge.
+Every claim backed by transcript evidence. No filler.
 """
 
-    if claim_type == "life_insurance":
-        section4_note = """
-═══ SECTION 4: Information Gathering Quality (25 pts) ═══
-NOTE: The mathematical FNOL field completeness is calculated separately by Python.
-YOU are scoring the QUALITY of information gathering, not the completeness of fields.
-| Criterion | Points | Type |
-|-----------|--------|------|
-| Information gathered efficiently without redundant questions | 8 | Scaled (deduct 3pts per repeated question) |
-| Did not ask for information already provided or deducible from context | 5 | Scaled (deduct 2pts per unnecessary question) |
-| Required documents communicated COMPLETELY in one response (not partially) | 5 | Binary |
-| Payout options communicated | 4 | Binary |
-| Processing timeline communicated | 3 | Binary |
 
-EVALUATION: Check if agent asked for something the caller already stated. Check if all required documents (death certificate, claim form, photo ID) were mentioned together. Check if payout options (lump sum, installments, annuity) were mentioned. Check if processing timeline (30-60 days) was mentioned.
-"""
-    else:
-        section4_note = """
-═══ SECTION 4: Information Gathering Quality (25 pts) ═══
-NOTE: The mathematical FNOL field completeness is calculated separately by Python.
-YOU are scoring the QUALITY of information gathering, not the completeness of fields.
-| Criterion | Points | Type |
-|-----------|--------|------|
-| Information gathered efficiently without redundant questions | 8 | Scaled (deduct 3pts per repeated question) |
-| Did not ask for information already provided or deducible from context | 5 | Scaled (deduct 2pts per unnecessary question) |
-| Proactively offered relevant services (towing/rental) when applicable | 4 | Binary/N-A |
-| Correctly assessed coverage before promising services | 4 | Binary/N-A |
-| Next steps and timeline communicated (e.g., adjuster contact within 24-48hrs) | 4 | Binary |
+# ── LLM CALL FUNCTIONS ────────────────────────────────────────────────────────
 
-EVALUATION: Check if agent re-asked for already-stated details. If vehicle wasn't drivable, check if towing was offered. Check if coverage was verified against policy data before offering services. Check if next steps were explained.
-"""
-
-    if claim_type == "life_insurance":
-        section5 = """
-═══ SECTION 5: Compliance & Process Adherence (20 pts) ═══
-| Criterion | Points | Auto-fail? |
-|-----------|--------|-----------|
-| HIPAA notice given before collecting medical/personal info | 5 | ✅ YES — section score = 0 if missing |
-| Contestability period flagged if applicable (check policy data) | 5 | No |
-| Beneficiary verified against policy records | 4 | No |
-| Fraud indicators flagged/noted if detected (or N/A = full points) | 3 | No |
-| Did NOT disclose unauthorized information | 3 | No |
-
-AUTO-FAIL: If agent collected sensitive medical/personal details without mentioning HIPAA or information privacy, the ENTIRE Section 5 = 0 points.
-"""
-    else:
-        section5 = """
-═══ SECTION 5: Compliance & Process Adherence (20 pts) ═══
-| Criterion | Points | Auto-fail? |
-|-----------|--------|-----------|
-| Never advised caller to admit fault | 5 | ✅ YES — section score = 0 if violated |
-| Correctly assessed coverage before promising services | 4 | No |
-| Police report handling was appropriate (asked once, didn't loop) | 4 | No |
-| Fraud indicators flagged/noted if detected (or N/A = full points) | 4 | No |
-| Call recording disclosure given (cross-check with Section 1) | 3 | No |
-
-AUTO-FAIL: If agent told the caller "it sounds like you were at fault", "you should admit fault", or any variation advising fault admission → ENTIRE Section 5 = 0 points.
-"""
-
-    section6 = """
-═══ SECTION 6: Resolution & Call Close (10 pts) ═══
-| Criterion | Points | Type |
-|-----------|--------|------|
-| Next steps clearly communicated before closing | 4 | Scaled (0-4) |
-| All key procedure points from knowledge docs covered during call | 3 | Scaled (0-3) |
-| Clean call close without unnecessary dragging | 3 | Scaled (0-3) |
-
-EVALUATION: Agent gets 0 on "procedure points covered" if any critical procedure (timeline, documents, payout options for life; timeline, adjuster, next steps for car) was never mentioned. "Clean close" means the agent wrapped up promptly once business was done — no repetitive summaries or redundant confirmations.
-"""
-
-    return base + section4_note + section5 + section6
-
-
-# ─── Narrative Generator Prompt (Call B) ─── #
-
-_NARRATIVE_SYSTEM_PROMPT = """You are an expert insurance call center QA coach writing the narrative portion of a call evaluation report.
-Your job is to create a COMPREHENSIVE, DETAILED call report that would give a supervisor or quality manager full context of the call without needing to listen to it.
-
-You must produce:
-
-1. call_summary: A DETAILED multi-paragraph narrative (4-6 paragraphs) covering:
-   - PARAGRAPH 1: Call overview — who called, why, what type of claim, the primary insurance product involved
-   - PARAGRAPH 2: How the caller communicated — their emotional state, language used (formal/informal, distressed/calm), any notable behavior (angry, confused, cooperative, in a hurry, multilingual)
-   - PARAGRAPH 3: How the agent handled the call — their approach, tone, questioning style, whether they followed procedure. Were they empathetic? Efficient? Did they take control of the conversation?
-   - PARAGRAPH 4: Key information exchanged — what facts were gathered, what was communicated to the caller (next steps, timelines, documents needed), any services offered (towing, rental)
-   - PARAGRAPH 5: Call outcome and resolution — how did the call end, what remains to be done, were commitments made, was the caller satisfied?
-   - PARAGRAPH 6 (if applicable): Any notable issues — compliance concerns, missed opportunities, exceptional handling
-
-2. caller_profile: A 2-3 sentence behavioral profile of the caller — their emotional state, communication style, language preference, level of distress or urgency. Example: "The caller was visibly distressed and spoke in rapid Hinglish, switching between Hindi and English mid-sentence. They were cooperative but anxious, repeatedly asking for reassurance that help was on the way."
-
-3. call_highlights: 4-8 bullet points of key moments/events during the call, in chronological order. Each should be a specific, factual statement. Examples:
-   - "Caller reported a car accident on NH-48 near Jaipur"
-   - "Agent verified policy NS-CAR-2024-0042 and confirmed active coverage"
-   - "Agent offered towing service after confirming roadside assistance coverage"
-   - "Caller mentioned police report was filed (FIR #12345)"
-
-4. strengths: 3-5 specific things the agent did well (cite examples from the call)
-
-5. improvements: 2-4 specific, actionable things the agent should improve (be constructive, not punitive)
-
-6. coaching_notes: 2-3 sentences of coaching advice for the agent's development
-
-7. recommended_supervisor_action: ONLY populate this if the overall score is below 45 (Critical Issues). Suggest specific supervisor follow-up. Set to null otherwise.
-
-Be specific and cite examples from the transcript. Avoid generic statements like "good job" or "needs improvement".
-Write as though this report will be read by a supervisor who did NOT listen to the call.
-"""
-
-
-async def _run_rubric_evaluation(
+async def _run_agent_rubric(
     formatted_transcript: str,
     call_duration: float,
     detected_intent: str | None,
     member_data: dict | None,
     claim_type: str | None,
-    knowledge_docs: list[dict] | None,
+    accumulated_facts: dict | None,
 ) -> dict:
-    """Call A — LLM rubric evaluator. Returns scored sections with evidence."""
+    fnol_context = ""
+    if accumulated_facts:
+        collected     = [k for k, v in accumulated_facts.items() if v is not None]
+        not_collected = [k for k, v in accumulated_facts.items() if v is None]
+        fnol_context  = f"\nFNOL collected: {collected}\nFNOL missing: {not_collected}"
 
-    rubric_criteria = _build_rubric_criteria(claim_type)
-
-    user_prompt = f"""Call Transcript:
+    user_prompt = f"""CALL TRANSCRIPT — score [Agent] turns only:
 {formatted_transcript}
 
-Call Duration: {int(call_duration)} seconds
-Detected Claim Type: {detected_intent or 'unknown'}
-Insurance Line: {claim_type or 'unknown'}
-Policyholder Identified: {member_data.get('name') if member_data else 'Not identified'}
-Policyholder Data: {json.dumps(member_data, indent=2) if member_data else 'None'}
+CONTEXT:
+Duration: {int(call_duration)}s | Intent: {detected_intent or 'unknown'} | Line: {claim_type or 'unknown'}
+Policy Data: {json.dumps(member_data, indent=2) if member_data else 'Not located during call'}
+{fnol_context}
 
-Knowledge Docs Available During Call:
-{_format_docs(knowledge_docs)}
-
-═══════════════════════════════════════
-RUBRIC — Score each section below:
-═══════════════════════════════════════
-{rubric_criteria}
-
-Score EVERY criterion in EVERY section. Return the structured rubric evaluation."""
+Score every criterion. Provide direct agent quote as evidence or "Not observed in transcript"."""
 
     response = await client.beta.chat.completions.parse(
         model=MODEL,
         messages=[
             {"role": "system", "content": _RUBRIC_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
+            {"role": "user",   "content": user_prompt},
         ],
-        temperature=0.2,
-        max_tokens=3000,
-        response_format=RubricEvaluation,
+        temperature=0.1,
+        max_tokens=4000,
+        response_format=AgentRubric,
     )
-
     return response.choices[0].message.parsed.model_dump()
 
 
-async def _run_narrative_generation(
+async def _run_call_insights(
     formatted_transcript: str,
     call_duration: float,
     detected_intent: str | None,
     overall_score: int,
+    member_data: dict | None,
+    claim_type: str | None,
 ) -> dict:
-    """Call B — LLM narrative generator. Returns summary, strengths, improvements, coaching."""
-
-    user_prompt = f"""Call Transcript:
+    user_prompt = f"""CALL TRANSCRIPT:
 {formatted_transcript}
 
-Call Duration: {int(call_duration)} seconds
-Detected Claim Type: {detected_intent or 'unknown'}
-Overall Rubric Score: {overall_score}/100
+CONTEXT:
+Duration: {int(call_duration)}s | Intent: {detected_intent or 'unknown'} | Line: {claim_type or 'unknown'}
+Policy Holder: {member_data.get('name') if member_data else 'NOT located during call'}
+Rubric Score: {overall_score}/100
 
-Write the narrative evaluation for this call."""
+Write the complete evaluation. Every observation must cite the transcript."""
 
     response = await client.beta.chat.completions.parse(
         model=MODEL,
         messages=[
-            {"role": "system", "content": _NARRATIVE_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
+            {"role": "system", "content": _INSIGHTS_SYSTEM_PROMPT},
+            {"role": "user",   "content": user_prompt},
         ],
-        temperature=0.3,
-        max_tokens=2000,
-        response_format=NarrativeEvaluation,
+        temperature=0.25,
+        max_tokens=4000,
+        response_format=CallEvaluationInsights,
     )
-
     return response.choices[0].message.parsed.model_dump()
 
 
 def _calculate_grade(score: int) -> str:
-    """Map numeric score to grade band."""
-    if score >= 90:
-        return "Exceptional"
-    elif score >= 75:
-        return "Proficient"
-    elif score >= 60:
-        return "Developing"
-    elif score >= 45:
-        return "Needs Improvement"
-    else:
-        return "Critical Issues"
+    if score >= 90: return "Exceptional"
+    if score >= 75: return "Proficient"
+    if score >= 60: return "Developing"
+    if score >= 45: return "Needs Improvement"
+    return "Critical Issues"
 
+
+# ── MAIN ENTRY POINT ──────────────────────────────────────────────────────────
 
 async def generate_post_call_evaluation(
-    transcript_lines: list[dict],
-    call_duration: float,
-    detected_intent: str | None,
-    member_data: dict | None,
+    transcript_lines:  list,
+    call_duration:     float,
+    detected_intent:   str | None,
+    member_data:       dict | None,
     accumulated_facts: dict | None = None,
-    claim_type: str | None = None,
-    knowledge_docs: list[dict] | None = None,
+    claim_type:        str | None  = None,
+    knowledge_docs:    list | None = None,
 ) -> dict:
-    """
-    Generate a comprehensive rubric-based post-call evaluation.
-    Runs 3 scoring paths:
-      A) LLM rubric evaluator (sections 1-6 with evidence)
-      B) LLM narrative generator (summary, coaching)
-      C) Pure Python FNOL completeness (mathematical field scoring)
-    """
+    import json
 
-    # Format transcript for LLM
     formatted_transcript = "\n".join(
         f"[{line['speaker']} {line['timestamp']}]: \"{line['text']}\""
         for line in transcript_lines
     )
 
-    # ── Call C (instant): FNOL Completeness ──
+    # Instant FNOL scoring
     fnol_result = calculate_fnol_completeness(accumulated_facts, claim_type)
 
-    # ── Call A: Rubric Evaluation ──
-    rubric_result = await _run_rubric_evaluation(
+    # Rubric scoring
+    rubric_result = await _run_agent_rubric(
         formatted_transcript=formatted_transcript,
         call_duration=call_duration,
         detected_intent=detected_intent,
         member_data=member_data,
         claim_type=claim_type,
-        knowledge_docs=knowledge_docs,
+        accumulated_facts=accumulated_facts,
     )
 
-    # Calculate overall score from rubric sections
-    overall_score = sum(s["points_awarded"] for s in rubric_result["sections"])
-    # Cap at 100
-    overall_score = min(overall_score, 100)
+    overall_score = min(sum(s["points_awarded"] for s in rubric_result["sections"]), 100)
     grade = _calculate_grade(overall_score)
 
-    # ── Call B: Narrative (runs after we know the score) ──
-    narrative_result = await _run_narrative_generation(
+    # Insights generation
+    insights_result = await _run_call_insights(
         formatted_transcript=formatted_transcript,
         call_duration=call_duration,
         detected_intent=detected_intent,
         overall_score=overall_score,
+        member_data=member_data,
+        claim_type=claim_type,
     )
 
-    # ── Merge everything into final evaluation ──
-    evaluation = {
+    ci = insights_result.get("caller_insights", {})
+
+    return {
+        # Scores
         "overall_score": overall_score,
-        "grade": grade,
-        "call_summary": narrative_result["call_summary"],
-        "caller_profile": narrative_result["caller_profile"],
-        "call_highlights": narrative_result["call_highlights"],
-        "sections": rubric_result["sections"],
+        "grade":         grade,
+
+        # Call context
+        "call_type":    insights_result["call_type"],
+        "call_outcome": insights_result["call_outcome"],
+        "call_summary": insights_result["call_summary"],
+        "call_events":  insights_result["call_events"],
+
+        # Caller
+        "caller_insights": ci,  # full structured object
+
+        # Agent observations
+        "skill_observations":    insights_result["skill_observations"],
+        "procedure_gaps":        insights_result["procedure_gaps"],
+        "strong_moments":        insights_result["strong_moments"],
+
+        # Compliance
+        "compliance_flags":   insights_result["compliance_flags"],
+        "compliance_summary": insights_result["compliance_summary"],
+
+        # Improvement
+        "missed_opportunities":      insights_result["missed_opportunities"],
+        "recurring_risk_indicators": insights_result["recurring_risk_indicators"],
+        "positive_indicators":       insights_result["positive_indicators"],
+        "agent_improvement_notes":   insights_result["agent_improvement_notes"],
+
+        # Rubric
+        "sections":   rubric_result["sections"],
         "auto_fails": rubric_result["auto_fails"],
-        "strengths": narrative_result["strengths"],
-        "improvements": narrative_result["improvements"],
-        "coaching_notes": narrative_result["coaching_notes"],
-        "recommended_supervisor_action": narrative_result["recommended_supervisor_action"],
-        # FNOL data
-        "fnol_completeness_pct": fnol_result["fnol_completeness_pct"],
-        "fnol_points_earned": fnol_result["fnol_points_earned"],
-        "fnol_points_possible": fnol_result["fnol_points_possible"],
-        "fnol_fields_collected": fnol_result["fnol_fields_collected"],
-        "fnol_fields_missing": fnol_result["fnol_fields_missing"],
+
+        # FNOL
+        "fnol_completeness_pct":  fnol_result["fnol_completeness_pct"],
+        "fnol_points_earned":     fnol_result["fnol_points_earned"],
+        "fnol_points_possible":   fnol_result["fnol_points_possible"],
+        "fnol_fields_collected":  fnol_result["fnol_fields_collected"],
+        "fnol_fields_missing":    fnol_result["fnol_fields_missing"],
+
         # Metadata
         "call_duration_seconds": int(call_duration),
-        "total_utterances": len(transcript_lines),
-        "agent_utterances": sum(1 for l in transcript_lines if l["speaker"] == "Agent"),
-        "customer_utterances": sum(1 for l in transcript_lines if l["speaker"] == "Customer"),
+        "total_utterances":      len(transcript_lines),
+        "agent_utterances":      sum(1 for l in transcript_lines if l["speaker"] == "Agent"),
+        "customer_utterances":   sum(1 for l in transcript_lines if l["speaker"] == "Customer"),
     }
-
-    return evaluation
-
 
 def _format_docs(docs: list[dict] | None) -> str:
     if not docs:
