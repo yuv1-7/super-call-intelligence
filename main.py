@@ -53,7 +53,7 @@ app.add_middleware(
 )
 
 # ─── Regex patterns for the FAST PATH ─── #
-POLICY_REGEX = re.compile(r"\b(CAR|LIFE)[-\s]?(\d{4,})\b", re.IGNORECASE)
+POLICY_REGEX = re.compile(r"\b(CAR|LIFE|MED)[-\s]?(\d{4,})\b", re.IGNORECASE)
 
 
 # ─── Health check ─── #
@@ -258,7 +258,7 @@ async def stream_endpoint(websocket: WebSocket):
 
                 # Check if we need fact extraction — skip if key facts are already filled
                 key_facts_filled = sum(
-                    1 for k in ["date_of_incident", "location_of_incident", "incident_description", "cause_of_death", "caller_name"]
+                    1 for k in ["date_of_incident", "location_of_incident", "incident_description", "cause_of_death", "caller_name", "hospital_name", "admission_date", "diagnosis"]
                     if accumulated_facts.get(k)
                 )
 

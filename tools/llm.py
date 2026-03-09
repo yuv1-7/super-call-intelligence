@@ -28,9 +28,12 @@ class IntentClassification(BaseModel):
         "car_vandalism",
         "life_death_claim",
         "life_accidental_death",
+        "medical_hospitalization",
+        "medical_outpatient",
+        "medical_critical_illness",
         "general_inquiry",
     ]
-    claim_type: Literal["car_insurance", "life_insurance", "general"]
+    claim_type: Literal["car_insurance", "life_insurance", "medical_insurance", "general"]
 
 
 class EntityExtraction(BaseModel):
@@ -54,6 +57,14 @@ class ClaimFacts(BaseModel):
     police_report_filed: bool | None
     police_report_number: str | None
     other_parties_involved: str | None
+    # Medical-specific fields
+    hospital_name: str | None
+    admission_date: str | None
+    discharge_date: str | None
+    diagnosis: str | None
+    treating_doctor: str | None
+    cashless_or_reimbursement: str | None
+    pre_authorization_number: str | None
 
 
 # ─── Rubric-Based Post-Call Evaluation Schemas ─── #
@@ -137,7 +148,7 @@ async def extract_entities(transcript: str) -> dict:
     
     system_prompt = """You are an insurance entity extraction system.
 Analyze the caller's statement (which may be in any language, or a mix of languages) and extract the following if present. Your output must be in English:
-- "policy_id": formatted strictly as CAR-XXXXXX or LIFE-XXXXXX. If the user speaks the numbers in another language (e.g., Hindi "ek do teen"), you MUST translate them to English digits (123).
+- "policy_id": formatted strictly as CAR-XXXXXX, LIFE-XXXXXX, or MED-XXXXXX. If the user speaks the numbers in another language (e.g., Hindi "ek do teen"), you MUST translate them to English digits (123).
 - "name": full or partial name of the caller.
 - "phone": phone number referenced. You MUST translate any spoken numbers into English digits.
 Return null for fields not found."""
@@ -205,7 +216,7 @@ CRITICAL — caller_name rules:
 
 CRITICAL — policy_number rules:
 - Extract the policy number ONLY if the customer explicitly states it (e.g. "my policy number is CAR-12345").
-- Format it in standard form: uppercase prefix, hyphen, digits (e.g., "car 12345" → "CAR-12345", "life 200001" → "LIFE-200001").
+- Format it in standard form: uppercase prefix, hyphen, digits (e.g., "car 12345" → "CAR-12345", "life 200001" → "LIFE-200001", "med 300001" → "MED-300001").
 - Return null if no policy number has been mentioned.
 
 CRITICAL — police_report_filed and police_report_number rules:
@@ -215,7 +226,17 @@ CRITICAL — police_report_filed and police_report_number rules:
 - If the caller mentions a police report number, FIR number, or complaint number, extract it.
 - e.g. "the police report number is FIR-2026-4521" → police_report_number = "FIR-2026-4521"
 - If they say a police report was filed but did NOT provide the number, set police_report_filed to true and police_report_number to null.
-- Return null for police_report_number if no number was mentioned."""
+- Return null for police_report_number if no number was mentioned.
+
+CRITICAL — Medical claim fields:
+- hospital_name: Name of the hospital where the policyholder is admitted or being treated. Extract from context (e.g. "I'm at Apollo Hospital" → "Apollo Hospital").
+- admission_date: When the person was admitted. Use YYYY-MM-DD format. Extrapolate from relative references using current date/time.
+- discharge_date: When discharged, if mentioned. Use YYYY-MM-DD format. Null if still admitted or not mentioned.
+- diagnosis: The medical condition, disease, or reason for hospitalization (e.g. "appendicitis", "kidney stones", "heart attack").
+- treating_doctor: Name of the doctor, if mentioned.
+- cashless_or_reimbursement: If the caller mentions cashless or reimbursement preference. One of: "cashless", "reimbursement", or null if not discussed.
+- pre_authorization_number: Pre-authorization or approval reference number if provided by the caller or hospital.
+- Return null for all medical fields if this is not a medical claim."""
 
     response = await client.beta.chat.completions.parse(
         model=FAST_MODEL,
@@ -326,6 +347,46 @@ RULES:
 - **Closing**: Once all the above have been covered, ask if there's anything else. When they say no, give a short goodbye + [Agent: End Call].
 """
 
+# ─── MEDICAL INSURANCE SPECIFIC RULES ─── #
+_MEDICAL_RULES = _SHARED_RULES + """
+Medical Insurance Claim Rules:
+
+CONTEXT:
+- The caller is reporting a medical insurance claim — hospitalization, day-care procedure, OPD, or critical illness.
+- The policyholder may be calling for themselves OR on behalf of a covered family member (for Family Floater policies).
+
+RULES:
+- **Empathy**: Be warm and supportive — the caller or their family member may be in the hospital or awaiting treatment. Acknowledge their situation once and proceed efficiently.
+- **Policy Lookup**: Locate the policy by policy number or phone number, same as other claim types.
+- **Determine Claim Type**: Identify whether this is a hospitalization, day-care procedure, OPD visit, or critical illness claim based on what the caller describes.
+- **Hospital & Admission Details**: Collect the hospital name, date of admission (or planned admission), and the diagnosis or reason for hospitalization. If the caller says they are "at Apollo" or "admitted to Fortis", that IS the hospital name — do not re-ask.
+- **Network Hospital Check**: CRITICAL — Check if the hospital the caller mentions is in their `networkHospitals` list in the Policyholder Data.
+  * If YES: inform them that cashless treatment is available at this hospital. Explain the pre-authorization process.
+  * If NO: inform them politely that the hospital is not in the network, so the claim will be processed as reimbursement. Explain the reimbursement process.
+  * If the caller hasn't mentioned a hospital yet, ask which hospital they are at or plan to go to.
+- **Cashless Process**: If the hospital is in-network and the caller wants cashless:
+  * Inform them that the hospital's insurance desk will submit a pre-authorization request to our TPA.
+  * Pre-authorization is typically approved within 2-4 hours for planned admissions, 1 hour for emergencies.
+  * The caller only needs to pay the copay percentage and any amounts exceeding sub-limits.
+  * ALWAYS check and communicate the copay percentage from the policy data.
+- **Reimbursement Process**: If out-of-network or the caller prefers reimbursement:
+  * Inform them they will need to pay the hospital bill upfront.
+  * Required documents: original hospital bills, discharge summary, diagnostic reports, doctor's prescription, pharmacy bills, and completed claim form.
+  * Documents must be submitted within 15 days of discharge.
+  * Reimbursement is processed within 30 days of complete documentation.
+- **Pre-Existing Conditions**: If the diagnosis sounds like it could be a pre-existing condition (diabetes, hypertension, heart disease, etc.):
+  * Check the `preExistingWaiting` field in Policyholder Data.
+  * If waiting period is "Completed" or expired: treat as a normal claim, no need to mention waiting periods.
+  * If waiting period is "Active" or has time remaining: inform the caller sensitively that claims related to this condition may be subject to the waiting period exclusion. Do NOT be blunt or dismissive.
+- **Sub-Limits**: Inform the caller about applicable sub-limits (room rent cap, ICU cap) from their policy so they can plan accordingly.
+- **IRDAI Timelines**: Remind the caller that the insurer must be intimated within 24 hours for planned admissions and 48 hours for emergencies.
+- **Day-Care Procedures**: If the treatment requires less than 24 hours of hospitalization, check if the policyholder has the 'Day-Care Procedures' add-on. If yes, the claim follows the same cashless/reimbursement flow. If no, inform them it may not be covered.
+- **Critical Illness Claims**: For critical illness diagnoses (cancer, heart attack, stroke, etc.), check the `coveredConditions` field. If the condition is listed, confirm coverage. Critical illness claims are typically lump-sum payments after diagnosis confirmation.
+- **Required Documents**: Communicate ALL required documents in ONE complete response — do not split across turns.
+- **Next Steps**: Before wrapping up, ensure the caller knows: (1) what the hospital needs to do (pre-auth for cashless), (2) what documents they need to collect, (3) that a claims coordinator will contact them within 24 hours, (4) the copay percentage they need to pay.
+- **Closing**: Ask if there is anything else, then close professionally.
+"""
+
 
 def _format_collected_facts(facts: dict | None, claim_type: str | None = None) -> str:
     """Format collected facts into a clear known/unknown checklist for the LLM.
@@ -344,6 +405,12 @@ def _format_collected_facts(facts: dict | None, claim_type: str | None = None) -
         "caller_name", "policy_number", "relationship_to_policyholder",
         "date_of_incident", "location_of_incident", "cause_of_death",
     ]
+    _MEDICAL_FIELDS = [
+        "caller_name", "policy_number", "hospital_name",
+        "admission_date", "diagnosis", "treating_doctor",
+        "cashless_or_reimbursement", "pre_authorization_number",
+        "discharge_date",
+    ]
     _GENERAL_FIELDS = [
         "caller_name", "policy_number", "incident_description",
     ]
@@ -352,6 +419,8 @@ def _format_collected_facts(facts: dict | None, claim_type: str | None = None) -
         active_fields = _LIFE_FIELDS
     elif claim_type == "car_insurance":
         active_fields = _CAR_FIELDS
+    elif claim_type == "medical_insurance":
+        active_fields = _MEDICAL_FIELDS
     else:
         active_fields = _GENERAL_FIELDS
 
@@ -369,6 +438,13 @@ def _format_collected_facts(facts: dict | None, claim_type: str | None = None) -
         "police_report_filed": "Police Report Filed",
         "police_report_number": "Police Report Number",
         "other_parties_involved": "Other Parties",
+        "hospital_name": "Hospital Name",
+        "admission_date": "Admission Date",
+        "discharge_date": "Discharge Date",
+        "diagnosis": "Diagnosis / Condition",
+        "treating_doctor": "Treating Doctor",
+        "cashless_or_reimbursement": "Cashless / Reimbursement",
+        "pre_authorization_number": "Pre-Authorization Number",
     }
 
     known = []
@@ -427,6 +503,8 @@ def _select_prompt(claim_type: str | None) -> str:
     """Select the appropriate system prompt based on the claim type."""
     if claim_type == "life_insurance":
         return _LIFE_RULES
+    if claim_type == "medical_insurance":
+        return _MEDICAL_RULES
     return _CAR_RULES  # default for car_insurance + general
 
 
@@ -536,10 +614,26 @@ _LIFE_FNOL_FIELDS = {
     "cause_of_death":               {"label": "Cause of Death",               "points": 3},
 }
 
+_MEDICAL_FNOL_FIELDS = {
+    "caller_name":                  {"label": "Caller Name",                  "points": 2},
+    "hospital_name":                {"label": "Hospital Name",                "points": 3},
+    "admission_date":               {"label": "Admission Date",               "points": 3},
+    "diagnosis":                    {"label": "Diagnosis / Condition",        "points": 3},
+    "treating_doctor":              {"label": "Treating Doctor",              "points": 2},
+    "cashless_or_reimbursement":    {"label": "Cashless / Reimbursement",     "points": 2},
+    "pre_authorization_number":     {"label": "Pre-Authorization Number",     "points": 2},
+    "discharge_date":               {"label": "Discharge Date",               "points": 1},
+}
+
 def calculate_fnol_completeness(accumulated_facts, claim_type):
     if not accumulated_facts:
         accumulated_facts = {}
-    required = _LIFE_FNOL_FIELDS if claim_type == "life_insurance" else _CAR_FNOL_FIELDS
+    if claim_type == "life_insurance":
+        required = _LIFE_FNOL_FIELDS
+    elif claim_type == "medical_insurance":
+        required = _MEDICAL_FNOL_FIELDS
+    else:
+        required = _CAR_FNOL_FIELDS
     total_points  = sum(f["points"] for f in required.values())
     earned_points = 0
     collected, missing = [], []
@@ -758,6 +852,13 @@ A. ⚠️ AUTO-FAIL TRIGGER: Privacy/HIPAA notice given BEFORE collecting any ca
 B. Did NOT disclose policy benefit amounts to unverified caller (4 pts, binary)
 C. Flagged contestability period or beneficiary dispute if applicable (4 pts, binary | N/A)
 D. Handled cause-of-death question sensitively — did not probe unnecessarily (4 pts, scaled 0-4)
+
+FOR MEDICAL CLAIMS:
+A. ⚠️ AUTO-FAIL TRIGGER: Medical privacy notice given BEFORE discussing diagnosis or treatment details (6 pts)
+   If missing → Section 6 = 0 pts total.
+B. Correctly verified network hospital status and communicated cashless/reimbursement path (4 pts, binary)
+C. Communicated pre-authorization requirement for cashless claims (4 pts, binary | N/A if reimbursement)
+D. Addressed pre-existing condition waiting period status accurately if applicable (4 pts, binary | N/A = full pts if no PED)
 
 SECTION 7 — Call Resolution & Close (10 pts)
 ──────────────────────────────────────────────

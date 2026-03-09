@@ -461,6 +461,11 @@ body {
   color: var(--accent-purple);
 }
 
+.member-badge.medical {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--accent-green);
+}
+
 /* ─── Knowledge Card ─── */
 .card.knowledge .card-body {
   max-height: 400px;
@@ -875,6 +880,21 @@ body {
 .intent-badge.general_inquiry {
   background: rgba(99, 102, 241, 0.1);
   color: var(--accent-blue);
+}
+
+.intent-badge.medical_hospitalization {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--accent-green);
+}
+
+.intent-badge.medical_outpatient {
+  background: rgba(52, 211, 153, 0.10);
+  color: var(--accent-green);
+}
+
+.intent-badge.medical_critical_illness {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--accent-red);
 }
 
 /* ─── Room Badge ─── */
@@ -1319,6 +1339,12 @@ body {
   border: 1px solid rgba(167, 139, 250, 0.3);
 }
 
+.fnol-type-badge.medical {
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--accent-green);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
 /* ─── Form Sections ─── */
 .fnol-section {
   padding: 20px 32px;
@@ -1518,6 +1544,11 @@ body {
 .fnol-form.export-mode .fnol-type-badge.life {
   background: rgba(167, 139, 250, 0.2);
   color: #c4b5fd;
+}
+
+.fnol-form.export-mode .fnol-type-badge.medical {
+  background: rgba(52, 211, 153, 0.2);
+  color: #6ee7b7;
 }
 
 .fnol-form.export-mode .fnol-section {

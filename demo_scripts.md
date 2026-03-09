@@ -129,3 +129,89 @@ These scripts are designed to showcase the full power of your application. Read 
 
 **Agent:** "You're very welcome, Anand. We are here if you need anything else during this difficult time. Take care and goodbye."
 **[Agent: End Call]**
+
+---
+
+## 🏥 Scenario 4: Emergency Hospitalization — Cashless Claim
+**Goal:** Show the AI recognizing a medical hospitalization intent, checking network hospital status, guiding through the cashless pre-authorization process, communicating sub-limits and copay, and gathering all medical FNOL facts.
+
+**Data Targeted:** Kavita Reddy (`MED-300001` – Individual Health, 10% copay, Private room)
+
+**Agent:** "Thank you for calling Super Insurance, this is Agent speaking. How can I assist you today?"
+
+**Customer:** "Hi, my name is Kavita Reddy. I was rushed to Apollo Hospital last night. I've been admitted for emergency appendicitis surgery. My policy number is MED-300001."
+*(AI immediately classifies as `medical_hospitalization`, extracts policy MED-300001, hospital name "Apollo Hospital", and diagnosis "appendicitis". Fast-path regex picks up MED-300001 and loads Kavita's profile. AI confirms Apollo is in the `networkHospitals` list and tells the agent to inform about cashless eligibility.)*
+
+**Agent:** "I'm sorry to hear about your emergency, Kavita. I've pulled up your policy and I can see that Apollo Hospital is in your network — so you are eligible for cashless treatment. Let me guide you through the process."
+
+**Customer:** "Oh that's a relief. So I don't have to pay anything upfront?"
+*(AI suggests explaining the copay and pre-authorization process.)*
+
+**Agent:** "For cashless claims, the hospital's insurance desk will submit a pre-authorization request to our TPA. This is usually approved within one hour for emergencies. You will only need to pay a 10% copay and any charges that exceed your policy sub-limits."
+
+**Customer:** "What are my sub-limits?"
+*(AI pulls sub-limit data from the member profile and suggests the agent communicate them.)*
+
+**Agent:** "Your room rent sub-limit is ₹8,000 per day for a private room, ICU charges are capped at ₹15,000 per day, and ambulance is covered up to ₹3,000 per trip. Since you're in a private room, you should be within your room rent limit."
+
+**Customer:** "Okay, and Dr. Mehta is my treating surgeon. He said I'll probably be discharged in two or three days."
+*(AI extracts treating doctor "Dr. Mehta" and notes approximate discharge timeline.)*
+
+**Agent:** "Thank you for that information. I'll note Dr. Mehta as your treating surgeon. Now, has the hospital's insurance desk already contacted us for the pre-authorization, or do you need us to follow up with them?"
+
+**Customer:** "They said they submitted it but haven't heard back yet."
+*(AI suggests the agent reassure and provide the expected timeline.)*
+
+**Agent:** "I'll follow up with our TPA team to expedite the pre-authorization for your emergency surgery. You should receive confirmation shortly. In the meantime, please make sure you keep all discharge summary documents, diagnostic reports, and pharmacy bills — we'll need these for our records."
+
+**Customer:** "Will do. Is there anything else I need to know?"
+
+**Agent:** "Just a few things — a claims coordinator will contact you within 24 hours to help you through the rest of the process. You don't need to worry about the paperwork while you're recovering. Is there anything else I can help with?"
+
+**Customer:** "No, that covers everything. Thank you so much."
+
+**Agent:** "You're welcome, Kavita. I hope you have a speedy recovery. Take care and don't hesitate to call us if you need anything. Goodbye!"
+**[Agent: End Call]**
+
+---
+
+## 🏥 Scenario 5: Pre-Existing Condition — Reimbursement Claim
+**Goal:** Show the AI handling a sensitive pre-existing condition scenario: the caller's diabetes-related hospitalization may be subject to a waiting period exclusion. Demonstrate the AI guiding the agent through waiting period rules, copay implications, and the reimbursement process — all while being empathetic.
+
+**Data Targeted:** Rohit Deshmukh (`MED-300002` – Family Floater, 20% copay, PED waiting period active with 2 years remaining)
+
+**Agent:** "Thank you for calling Super Insurance, this is Agent speaking. How can I help you today?"
+
+**Customer:** "Hello, I'm calling about my husband's policy. His name is Rohit Deshmukh, policy number MED-300002. He was admitted to City General Hospital two days ago for diabetic ketoacidosis. He's been in the ICU."
+*(AI detects `medical_hospitalization` intent, extracts MED-300002, hospital "City General Hospital", diagnosis "diabetic ketoacidosis", and admission date (2 days ago). Loads Rohit's profile. AI flags two critical issues: (1) City General is NOT in the `networkHospitals` list, so cashless is not available; (2) the pre-existing waiting period for Type 2 Diabetes is ACTIVE with 2 years remaining.)*
+
+**Agent:** "I'm very sorry to hear about your husband's condition. Let me pull up his policy details. I can see his Family Floater policy is active. However, I need to let you know about two things regarding this claim."
+
+**Customer:** "Okay, what is it?"
+*(AI suggests the agent communicate the network hospital status first, then the pre-existing condition waiting period — sensitively.)*
+
+**Agent:** "First, City General Hospital is not in your policy's network hospital list. This means the claim will need to be processed as a reimbursement — meaning you'll pay the hospital bills upfront and then submit them to us for reimbursement."
+
+**Customer:** "I understand. And the second thing?"
+
+**Agent:** "Since diabetic ketoacidosis is related to Type 2 Diabetes, which was disclosed as a pre-existing condition at the time of policy purchase, there is a 4-year waiting period that applies. Based on your policy records, the waiting period has 2 years remaining. This means the claim related to this condition may be subject to exclusion under the pre-existing condition clause."
+
+**Customer:** "Oh no... so we won't get anything covered?"
+*(AI suggests the agent be empathetic but factual, and explain what options exist.)*
+
+**Agent:** "I understand this is concerning, and I want to make sure you have all the information. While the pre-existing condition waiting period does apply, I'd recommend submitting the claim anyway. Our claims team will do a full review — there are sometimes partial coverages or complications that may be assessed separately. I'll also note that your copay percentage for this policy is 20%."
+
+**Customer:** "Okay, so what documents do we need to submit?"
+*(AI lists all required reimbursement documents in one go.)*
+
+**Agent:** "For the reimbursement process, you'll need to submit the following: original hospital bills, the discharge summary, all diagnostic reports, the treating doctor's prescription, pharmacy bills, and a completed claim form which I can email to the address on file. All documents should be submitted within 15 days of discharge."
+
+**Customer:** "Alright. His doctor's name is Dr. Sanjay Patil, for your records."
+*(AI extracts treating doctor "Dr. Sanjay Patil".)*
+
+**Agent:** "Thank you, I've noted that. The reimbursement is typically processed within 30 days of receiving complete documentation. A claims coordinator will also reach out to you within 24 hours. Is there anything else I can help with?"
+
+**Customer:** "No, thank you for explaining everything so clearly."
+
+**Agent:** "You're welcome. I hope your husband recovers well. Please don't hesitate to call if you have any questions about the documents or the process. Take care and goodbye."
+**[Agent: End Call]**

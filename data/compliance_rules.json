@@ -133,5 +133,63 @@
             "lying"
         ],
         "message": "📋 COMPLIANCE: If fraud is suspected, do NOT accuse the caller. Document observations factually and flag the claim for Special Investigations Unit (SIU) review. Any person who knowingly files a false insurance claim is subject to criminal prosecution."
+    },
+    {
+        "ruleId": "COMP-MED-001",
+        "title": "IRDAI 24-Hour Intimation Requirement",
+        "category": "medical_insurance",
+        "severity": "high",
+        "triggers": [
+            "hospital",
+            "admitted",
+            "hospitalization",
+            "surgery",
+            "medical",
+            "treatment"
+        ],
+        "message": "⚠️ COMPLIANCE: IRDAI mandates that the insurer must be intimated within 24 hours of planned hospitalization and within 48 hours for emergency admissions. Remind the caller to ensure timely intimation. Late intimation may result in claim processing delays."
+    },
+    {
+        "ruleId": "COMP-MED-002",
+        "title": "Pre-Authorization Mandatory for Cashless",
+        "category": "medical_insurance",
+        "severity": "critical",
+        "triggers": [
+            "cashless",
+            "network hospital",
+            "pre-authorization",
+            "hospital",
+            "admitted"
+        ],
+        "message": "🚨 CRITICAL: For cashless hospitalization claims, pre-authorization from the TPA is MANDATORY before treatment begins (except in emergencies). Without pre-authorization, the claim will be converted to reimbursement. Ensure the hospital's insurance desk submits the pre-authorization request."
+    },
+    {
+        "ruleId": "COMP-MED-003",
+        "title": "Medical Information Privacy Notice",
+        "category": "medical_insurance",
+        "severity": "critical",
+        "triggers": [
+            "medical",
+            "hospital",
+            "diagnosis",
+            "treatment",
+            "health",
+            "condition"
+        ],
+        "message": "🚨 PRIVACY: All medical and personal health information discussed on this call is protected. Do NOT disclose diagnosis, treatment details, or claim information to unauthorized parties. Verify that the caller is the policyholder or an authorized representative before sharing any medical claim details."
+    },
+    {
+        "ruleId": "COMP-MED-004",
+        "title": "Pre-Existing Condition Disclosure",
+        "category": "medical_insurance",
+        "severity": "high",
+        "triggers": [
+            "pre-existing",
+            "diabetes",
+            "hypertension",
+            "chronic",
+            "waiting period"
+        ],
+        "message": "⚠️ COMPLIANCE: If the claim involves a pre-existing condition, check the waiting period status. If the 4-year waiting period has NOT expired, the claim may be excluded. Communicate waiting period status clearly and sensitively. Non-disclosure of pre-existing conditions at policy inception may result in claim rejection — flag for underwriting review if suspected."
     }
 ]

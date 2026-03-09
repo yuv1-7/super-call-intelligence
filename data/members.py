@@ -146,6 +146,94 @@ MEMBER_DB = {
         "contestabilityExpired": False,
         "medicalHistory": "Healthy, active lifestyle, no pre-existing conditions",
         "lastPremiumPaid": "2026-02-01"
+    },
+
+    # ─── MEDICAL INSURANCE POLICIES ─── #
+    "MED-300001": {
+        "policyId": "MED-300001",
+        "name": "Kavita Reddy",
+        "age": 42,
+        "phone": "+91 32109-87654",
+        "email": "kavita.reddy@email.com",
+        "policyType": "Medical Insurance – Individual Health",
+        "coverageType": "Individual Health",
+        "coverageAmount": 1000000,
+        "premium": 15000,
+        "status": "Active",
+        "startDate": "2025-04-01",
+        "endDate": "2026-04-01",
+        "networkHospitals": ["Apollo Hospital", "Fortis Hospital", "Max Super Speciality Hospital", "AIIMS"],
+        "roomCategory": "Private",
+        "copay": 10,
+        "deductible": 5000,
+        "preExistingWaiting": "Completed — 4-year waiting period expired",
+        "maternity": False,
+        "dayCareProcedures": True,
+        "subLimits": {
+            "roomRent": "₹8,000/day",
+            "icu": "₹15,000/day",
+            "ambulance": "₹3,000 per trip"
+        },
+        "claimHistory": [
+            {"claimId": "CLM-M-7001", "date": "2025-08-10", "type": "Dengue Hospitalization", "amount": 45000, "status": "Settled"}
+        ],
+        "addOns": ["Day-Care Procedures", "Ambulance Cover"]
+    },
+    "MED-300002": {
+        "policyId": "MED-300002",
+        "name": "Rohit Deshmukh",
+        "age": 55,
+        "phone": "+91 21098-76543",
+        "email": "rohit.deshmukh@email.com",
+        "policyType": "Medical Insurance – Family Floater",
+        "coverageType": "Family Floater",
+        "coverageAmount": 2500000,
+        "premium": 32000,
+        "status": "Active",
+        "startDate": "2025-07-01",
+        "endDate": "2026-07-01",
+        "networkHospitals": ["Medanta Hospital", "Narayana Health", "Manipal Hospital", "Columbia Asia"],
+        "roomCategory": "Semi-Private",
+        "copay": 20,
+        "deductible": 10000,
+        "preExistingWaiting": "Active — 2 years remaining (Type 2 Diabetes disclosed)",
+        "maternity": True,
+        "dayCareProcedures": True,
+        "subLimits": {
+            "roomRent": "₹5,000/day",
+            "icu": "₹10,000/day",
+            "ambulance": "₹2,500 per trip"
+        },
+        "claimHistory": [
+            {"claimId": "CLM-M-7010", "date": "2025-09-20", "type": "Knee Arthroscopy (Day-Care)", "amount": 75000, "status": "Settled"},
+            {"claimId": "CLM-M-7011", "date": "2025-12-05", "type": "Wife — Appendectomy", "amount": 120000, "status": "Under Review"}
+        ],
+        "addOns": ["Day-Care Procedures", "Maternity Cover", "Ambulance Cover", "OPD Cover"]
+    },
+    "MED-300003": {
+        "policyId": "MED-300003",
+        "name": "Sneha Kapoor",
+        "age": 34,
+        "phone": "+91 10987-65432",
+        "email": "sneha.kapoor@email.com",
+        "policyType": "Medical Insurance – Critical Illness",
+        "coverageType": "Critical Illness",
+        "coverageAmount": 5000000,
+        "premium": 18000,
+        "status": "Active",
+        "startDate": "2025-01-15",
+        "endDate": "2026-01-15",
+        "networkHospitals": ["Tata Memorial Hospital", "Rajiv Gandhi Cancer Institute", "Kokilaben Hospital"],
+        "roomCategory": "Private",
+        "copay": 0,
+        "deductible": 0,
+        "preExistingWaiting": "Completed — no waiting period applicable",
+        "maternity": False,
+        "dayCareProcedures": False,
+        "subLimits": {},
+        "coveredConditions": ["Cancer", "Heart Attack", "Stroke", "Kidney Failure", "Major Organ Transplant", "Multiple Sclerosis"],
+        "claimHistory": [],
+        "addOns": []
     }
 }
 

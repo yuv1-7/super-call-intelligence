@@ -1,7 +1,7 @@
 /**
  * FNOL Form Card — Pre-filled First Notice of Loss form
  * Shows after call ends alongside the evaluation scorecard.
- * Renders claim-type-specific fields (car vs life) from accumulated call data.
+ * Renders claim-type-specific fields (car vs life vs medical) from accumulated call data.
  */
 import { useRef } from 'react';
 
@@ -14,11 +14,14 @@ export default function FNOLFormCard({ fnolData }) {
 
     const isCarClaim = intent?.startsWith('car_') || member?.policyId?.startsWith('CAR');
     const isLifeClaim = intent?.startsWith('life_') || member?.policyId?.startsWith('LIFE');
+    const isMedicalClaim = intent?.startsWith('medical_') || member?.policyId?.startsWith('MED');
 
     // Generate a mock claim reference number
-    const claimRef = isCarClaim
-        ? `CLM-A-${Date.now().toString().slice(-6)}`
-        : `CLM-L-${Date.now().toString().slice(-6)}`;
+    const claimRef = isMedicalClaim
+        ? `CLM-M-${Date.now().toString().slice(-6)}`
+        : isCarClaim
+            ? `CLM-A-${Date.now().toString().slice(-6)}`
+            : `CLM-L-${Date.now().toString().slice(-6)}`;
 
     const today = new Date().toLocaleDateString('en-IN', {
         year: 'numeric', month: 'long', day: 'numeric',
@@ -68,6 +71,19 @@ export default function FNOLFormCard({ fnolData }) {
         </div>
     );
 
+    // Determine form subtitle and badge
+    const formSubtitle = isMedicalClaim
+        ? 'Medical Insurance Claim Report'
+        : isCarClaim
+            ? 'Automobile Insurance Claim Report'
+            : 'Life Insurance Death Claim Report';
+
+    const typeBadge = isMedicalClaim
+        ? { className: 'medical', label: '🏥 Medical' }
+        : isCarClaim
+            ? { className: 'car', label: '🚗 Auto' }
+            : { className: 'life', label: '🛡️ Life' };
+
     return (
         <div className="fnol-form-wrapper">
             {/* Export Button */}
@@ -83,9 +99,7 @@ export default function FNOLFormCard({ fnolData }) {
                 <div className="fnol-header">
                     <div className="fnol-header-left">
                         <h2 className="fnol-title">First Notice of Loss</h2>
-                        <p className="fnol-subtitle">
-                            {isCarClaim ? 'Automobile Insurance Claim Report' : 'Life Insurance Death Claim Report'}
-                        </p>
+                        <p className="fnol-subtitle">{formSubtitle}</p>
                     </div>
                     <div className="fnol-header-right">
                         <div className="fnol-header-meta">
@@ -96,8 +110,8 @@ export default function FNOLFormCard({ fnolData }) {
                             <span className="fnol-meta-label">Report Date</span>
                             <span className="fnol-meta-value">{today}</span>
                         </div>
-                        <span className={`fnol-type-badge ${isCarClaim ? 'car' : 'life'}`}>
-                            {isCarClaim ? '🚗 Auto' : '🛡️ Life'}
+                        <span className={`fnol-type-badge ${typeBadge.className}`}>
+                            {typeBadge.label}
                         </span>
                     </div>
                 </div>
@@ -142,15 +156,33 @@ export default function FNOLFormCard({ fnolData }) {
                 <div className="fnol-section">
                     <h3 className="fnol-section-title">
                         <span className="fnol-section-num">03</span>
-                        {isLifeClaim ? 'Death Claim Details' : 'Incident / Loss Details'}
+                        {isMedicalClaim ? 'Hospitalization / Treatment Details' : isLifeClaim ? 'Death Claim Details' : 'Incident / Loss Details'}
                     </h3>
                     <div className="fnol-grid">
-                        <Field label={isLifeClaim ? 'Date of Death' : 'Date of Incident'} value={facts.date_of_incident} />
-                        {isCarClaim && <Field label="Time of Incident" value={facts.time_of_incident} />}
-                        <Field label={isLifeClaim ? 'Location of Death' : 'Location of Incident'} value={facts.location_of_incident} />
-                        {isLifeClaim && <Field label="Cause of Death" value={facts.cause_of_death} />}
-                        {isCarClaim && (
-                            <Field label="Incident Description" value={facts.incident_description} fullWidth />
+                        {/* Car & Life fields */}
+                        {!isMedicalClaim && (
+                            <>
+                                <Field label={isLifeClaim ? 'Date of Death' : 'Date of Incident'} value={facts.date_of_incident} />
+                                {isCarClaim && <Field label="Time of Incident" value={facts.time_of_incident} />}
+                                <Field label={isLifeClaim ? 'Location of Death' : 'Location of Incident'} value={facts.location_of_incident} />
+                                {isLifeClaim && <Field label="Cause of Death" value={facts.cause_of_death} />}
+                                {isCarClaim && (
+                                    <Field label="Incident Description" value={facts.incident_description} fullWidth />
+                                )}
+                            </>
+                        )}
+
+                        {/* Medical-specific fields */}
+                        {isMedicalClaim && (
+                            <>
+                                <Field label="Hospital Name" value={facts.hospital_name} />
+                                <Field label="Admission Date" value={facts.admission_date} />
+                                <Field label="Discharge Date" value={facts.discharge_date} />
+                                <Field label="Diagnosis / Condition" value={facts.diagnosis} />
+                                <Field label="Treating Doctor" value={facts.treating_doctor} />
+                                <Field label="Claim Type" value={facts.cashless_or_reimbursement} />
+                                <Field label="Pre-Authorization No." value={facts.pre_authorization_number} />
+                            </>
                         )}
                     </div>
                 </div>
@@ -209,23 +241,63 @@ export default function FNOLFormCard({ fnolData }) {
                     </div>
                 )}
 
+                {/* ─── Section 4 (Medical): Hospital & Coverage Details ─── */}
+                {isMedicalClaim && (
+                    <div className="fnol-section">
+                        <h3 className="fnol-section-title">
+                            <span className="fnol-section-num">04</span>
+                            Hospital & Coverage Details
+                        </h3>
+                        <div className="fnol-grid">
+                            {member?.networkHospitals?.length > 0 && (
+                                <Field label="Network Hospitals" value={member.networkHospitals.join(', ')} fullWidth />
+                            )}
+                            <Field label="Network Status" value={
+                                facts.hospital_name && member?.networkHospitals
+                                    ? member.networkHospitals.some(h => h.toLowerCase().includes((facts.hospital_name || '').toLowerCase()))
+                                        ? '✅ In-Network (Cashless Eligible)'
+                                        : '❌ Out-of-Network (Reimbursement Only)'
+                                    : '—'
+                            } />
+                            <Field label="Room Category" value={member?.roomCategory} />
+                            <Field label="Copay" value={member?.copay != null ? `${member.copay}%` : null} />
+                            {member?.subLimits && Object.keys(member.subLimits).length > 0 && (
+                                <>
+                                    {Object.entries(member.subLimits).map(([key, val]) => (
+                                        <Field key={key} label={`Sub-Limit: ${key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim()}`} value={val} />
+                                    ))}
+                                </>
+                            )}
+                            <Field label="Pre-Existing Status" value={member?.preExistingWaiting} fullWidth />
+                            <BoolField label="Day-Care Procedures" value={member?.dayCareProcedures} />
+                            <BoolField label="Maternity Coverage" value={member?.maternity} />
+                        </div>
+                    </div>
+                )}
+
                 {/* ─── Section 5: Coverage & Financial Details ─── */}
                 <div className="fnol-section">
                     <h3 className="fnol-section-title">
-                        <span className="fnol-section-num">{isCarClaim ? '05' : '05'}</span>
+                        <span className="fnol-section-num">05</span>
                         Coverage & Financial Details
                     </h3>
                     <div className="fnol-grid">
                         <Field label="Coverage Amount" value={formatCurrency(member?.coverageAmount)} />
                         <Field label="Annual Premium" value={formatCurrency(member?.premium)} />
-                        {isCarClaim && <Field label="Deductible" value={formatCurrency(member?.deductible)} />}
+                        {(isCarClaim || isMedicalClaim) && <Field label="Deductible" value={formatCurrency(member?.deductible)} />}
                         {isCarClaim && member?.addOns?.length > 0 && (
+                            <Field label="Active Add-Ons" value={member.addOns.join(' • ')} fullWidth />
+                        )}
+                        {isMedicalClaim && member?.addOns?.length > 0 && (
                             <Field label="Active Add-Ons" value={member.addOns.join(' • ')} fullWidth />
                         )}
                         {isLifeClaim && member?.cashValue != null && (
                             <Field label="Cash Value" value={formatCurrency(member.cashValue)} />
                         )}
                         {isCarClaim && member?.claimHistory?.length > 0 && (
+                            <Field label="Prior Claims" value={`${member.claimHistory.length} on file`} />
+                        )}
+                        {isMedicalClaim && member?.claimHistory?.length > 0 && (
                             <Field label="Prior Claims" value={`${member.claimHistory.length} on file`} />
                         )}
                     </div>

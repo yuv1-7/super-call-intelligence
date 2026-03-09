@@ -66,5 +66,54 @@
       "investigation"
     ],
     "content": "Super Insurance – Fraud Detection Reference\n\nCommon Red Flags:\n- Claim filed immediately after policy inception or a recent coverage increase\n- Caller demonstrates unusual familiarity with the claims process\n- Description of events sounds inconsistent or rehearsed\n- Incident occurred in a remote location with no witnesses\n- Caller is pressuring for an expedited settlement\n- Vehicle was recently listed for sale prior to a theft claim\n- Comprehensive coverage was recently added before a theft or vandalism claim\n- Multiple prior claims filed within a short period\n\nProtocol: If any red flags are observed, document them in the claim notes and flag the file for SIU (Special Investigations Unit) review. Do not confront or accuse the caller."
+  },
+  {
+    "docId": "KB-MED-001",
+    "title": "Medical Insurance Hospitalization Claim – Standard Operating Procedure",
+    "category": "medical_insurance",
+    "tags": [
+      "hospital",
+      "hospitalization",
+      "admitted",
+      "surgery",
+      "medical",
+      "cashless",
+      "reimbursement",
+      "claim",
+      "treatment"
+    ],
+    "content": "Super Insurance – Medical Insurance Hospitalization Claim SOP\n\nProcedure:\n1. Confirm whether the policyholder or covered family member has been admitted to a hospital or is scheduled for admission.\n2. Determine if the hospital is in the network (cashless eligible) or out-of-network (reimbursement only).\n3. For CASHLESS claims:\n   a. Verify the hospital is in the policyholder's network list.\n   b. A pre-authorization request must be submitted by the hospital to Super Insurance's TPA (Third Party Administrator) within 24 hours of admission.\n   c. Inform the caller that the hospital's insurance desk will handle the pre-authorization paperwork.\n   d. Pre-authorization approval is typically communicated within 2-4 hours for planned admissions, and within 1 hour for emergencies.\n   e. The policyholder only pays the copay percentage and any amounts exceeding sub-limits.\n4. For REIMBURSEMENT claims:\n   a. The policyholder pays the hospital bill upfront.\n   b. Required documents for reimbursement: original hospital bills, discharge summary, diagnostic reports, doctor's prescription, pharmacy bills, and completed claim form.\n   c. All documents must be submitted within 15 days of discharge.\n   d. Reimbursement is processed within 30 days of receiving complete documentation.\n5. IRDAI requires that the insurer must be intimated within 24 hours of hospitalization for planned admissions and within 48 hours for emergency admissions.\n6. Room rent and ICU charges are subject to sub-limits as per the policy. Inform the caller of their applicable sub-limits.\n7. A claims coordinator will be assigned and will contact the policyholder within 24 hours to guide next steps."
+  },
+  {
+    "docId": "KB-MED-002",
+    "title": "Pre-Existing Conditions & Waiting Period Policy",
+    "category": "medical_insurance",
+    "tags": [
+      "pre-existing",
+      "waiting period",
+      "diabetes",
+      "hypertension",
+      "chronic",
+      "condition",
+      "exclusion",
+      "medical"
+    ],
+    "content": "Super Insurance – Pre-Existing Conditions & Waiting Period Policy\n\nPolicy Rules:\n1. Pre-existing conditions (PED) are covered only after the mandatory waiting period of 4 years from the policy inception date.\n2. Common pre-existing conditions include: diabetes, hypertension, thyroid disorders, asthma, heart conditions, and kidney disease.\n3. If the waiting period has NOT expired, claims related to the pre-existing condition are excluded. The policyholder must be informed clearly and sensitively.\n4. If the waiting period HAS expired, the pre-existing condition is treated as any other covered illness — standard claim procedures apply.\n5. Specific disease waiting period: Certain conditions (e.g., hernia, cataracts, joint replacement, kidney stones) have a separate 2-year specific disease waiting period regardless of pre-existing status.\n6. Non-disclosure of pre-existing conditions at policy inception may result in claim rejection. If non-disclosure is suspected, flag the claim for underwriting review.\n7. The copay percentage may be higher for claims related to pre-existing conditions — check the policy terms.\n8. IRDAI mandates that all waiting period exclusions must be clearly communicated to the policyholder at the time of claim intimation."
+  },
+  {
+    "docId": "KB-MED-003",
+    "title": "Day-Care & OPD Claim Procedures",
+    "category": "medical_insurance",
+    "tags": [
+      "day-care",
+      "daycare",
+      "outpatient",
+      "opd",
+      "procedure",
+      "minor surgery",
+      "dialysis",
+      "chemotherapy"
+    ],
+    "content": "Super Insurance – Day-Care & OPD Claim Procedures\n\nDay-Care Procedures:\n1. Day-care procedures are medical treatments or surgeries that require less than 24 hours of hospitalization.\n2. Common covered day-care procedures: cataract surgery, dialysis, chemotherapy, lithotripsy, tonsillectomy, dental surgery under general anesthesia, and arthroscopy.\n3. Day-care claims follow the same cashless/reimbursement process as regular hospitalization claims.\n4. Pre-authorization is required for cashless day-care procedures — the hospital's insurance desk should initiate this.\n5. The policyholder must have the 'Day-Care Procedures' add-on or comprehensive coverage that includes day-care benefits.\n\nOPD (Outpatient) Claims:\n1. OPD benefits cover doctor consultations, diagnostic tests, pharmacy bills, and minor procedures that do not require hospitalization.\n2. OPD is covered ONLY if the policyholder has the 'OPD Cover' add-on.\n3. For OPD claims, the policyholder pays upfront and submits bills for reimbursement.\n4. Required documents: doctor's prescription, diagnostic reports, pharmacy bills, and consultation receipts.\n5. OPD claims are typically processed within 15 days of document submission.\n6. There is usually an annual OPD limit (₹15,000 – ₹25,000 depending on the plan). Inform the caller of their remaining OPD balance."
   }
 ]

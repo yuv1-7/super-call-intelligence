@@ -15,6 +15,10 @@ export default function MemberCard({ member }) {
 
     const isCarPolicy = member.policyId?.startsWith('CAR');
     const isLifePolicy = member.policyId?.startsWith('LIFE');
+    const isMedicalPolicy = member.policyId?.startsWith('MED');
+
+    const policyIcon = isMedicalPolicy ? '🏥' : isCarPolicy ? '🚗' : '🛡️';
+    const policyBadgeClass = isMedicalPolicy ? 'medical' : isCarPolicy ? 'car' : 'life';
 
     return (
         <div className="card member">
@@ -30,8 +34,8 @@ export default function MemberCard({ member }) {
                     <div className="member-field">
                         <span className="label">Policy Type</span>
                         <span className="value">
-                            <span className={`member-badge ${isCarPolicy ? 'car' : 'life'}`}>
-                                {isCarPolicy ? '🚗' : '🛡️'} {member.coverageType}
+                            <span className={`member-badge ${policyBadgeClass}`}>
+                                {policyIcon} {member.coverageType}
                             </span>
                         </span>
                     </div>
@@ -88,8 +92,64 @@ export default function MemberCard({ member }) {
                         </>
                     )}
 
-                    {/* Add-ons for car */}
-                    {isCarPolicy && member.addOns?.length > 0 && (
+                    {/* Medical-specific fields */}
+                    {isMedicalPolicy && (
+                        <>
+                            <div className="member-field">
+                                <span className="label">Room Category</span>
+                                <span className="value">{member.roomCategory || '—'}</span>
+                            </div>
+                            <div className="member-field">
+                                <span className="label">Copay</span>
+                                <span className="value">{member.copay != null ? `${member.copay}%` : '—'}</span>
+                            </div>
+                            {member.deductible != null && (
+                                <div className="member-field">
+                                    <span className="label">Deductible</span>
+                                    <span className="value">₹{member.deductible.toLocaleString('en-IN')}</span>
+                                </div>
+                            )}
+                            <div className="member-field full-width">
+                                <span className="label">Pre-Existing Status</span>
+                                <span className="value">{member.preExistingWaiting || '—'}</span>
+                            </div>
+                            {member.networkHospitals?.length > 0 && (
+                                <div className="member-field full-width">
+                                    <span className="label">Network Hospitals</span>
+                                    <span className="value">{member.networkHospitals.join(' • ')}</span>
+                                </div>
+                            )}
+                            {member.subLimits && Object.keys(member.subLimits).length > 0 && (
+                                <div className="member-field full-width">
+                                    <span className="label">Sub-Limits</span>
+                                    <span className="value">
+                                        {Object.entries(member.subLimits).map(([k, v]) => `${k.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim()}: ${v}`).join(' • ')}
+                                    </span>
+                                </div>
+                            )}
+                            {member.coveredConditions?.length > 0 && (
+                                <div className="member-field full-width">
+                                    <span className="label">Covered Conditions</span>
+                                    <span className="value">{member.coveredConditions.join(' • ')}</span>
+                                </div>
+                            )}
+                            <div className="member-field">
+                                <span className="label">Day-Care</span>
+                                <span className="value">{member.dayCareProcedures ? 'Covered ✅' : 'Not Covered ❌'}</span>
+                            </div>
+                            <div className="member-field">
+                                <span className="label">Maternity</span>
+                                <span className="value">{member.maternity ? 'Covered ✅' : 'Not Covered ❌'}</span>
+                            </div>
+                            <div className="member-field">
+                                <span className="label">Prior Claims</span>
+                                <span className="value">{member.claimHistory?.length || 0}</span>
+                            </div>
+                        </>
+                    )}
+
+                    {/* Add-ons */}
+                    {(isCarPolicy || isMedicalPolicy) && member.addOns?.length > 0 && (
                         <div className="member-field full-width">
                             <span className="label">Add-Ons</span>
                             <span className="value">{member.addOns.join(' • ')}</span>
