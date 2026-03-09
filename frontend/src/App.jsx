@@ -181,7 +181,7 @@ export default function App() {
                                         <div className="spinner-ring"></div>
                                         <div className="spinner-ring"></div>
                                     </div>
-                                    <h2>Generating Intelligence Report</h2>
+                                    <h2>Generating Post Call Report</h2>
                                     <p>Analyzing conversation behaviors, skills, and compliance...</p>
                                 </div>
                             </div>

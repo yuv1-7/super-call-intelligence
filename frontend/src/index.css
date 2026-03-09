@@ -3333,6 +3333,7 @@ body {
 }
 
 .pcc-qa-left {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -3341,7 +3342,9 @@ body {
 .pcc-qa-right {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 12px;
+  flex-shrink: 0;
+  text-align: right;
 }
 
 .pcc-chevron {
