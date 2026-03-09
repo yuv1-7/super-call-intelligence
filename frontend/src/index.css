@@ -3580,3 +3580,192 @@ body {
     font-size: 0.72rem;
   }
 }
+
+/* ════════════════════════════════════════════════════════════════
+   PostCallCard UI Enhancements & Loading Screen
+   ════════════════════════════════════════════════════════════════ */
+
+/* Loading Overlay */
+.post-call-loading-overlay {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  margin: 0;
+  backdrop-filter: blur(16px);
+  animation: cardFadeIn 0.5s ease-out;
+  min-height: 400px;
+}
+
+.generating-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+}
+
+.generating-loader h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 0;
+  background: linear-gradient(135deg, #a78bfa, #60a5fa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.generating-loader p {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+/* Premium Spinner */
+.premium-spinner {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  margin-bottom: 10px;
+}
+
+.spinner-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 3px solid transparent;
+}
+
+.spinner-ring:nth-child(1) {
+  border-top-color: #6366f1;
+  border-left-color: #6366f1;
+  animation: spin 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
+}
+
+.spinner-ring:nth-child(2) {
+  border-right-color: #a78bfa;
+  border-bottom-color: #a78bfa;
+  width: 80%;
+  height: 80%;
+  top: 10%;
+  left: 10%;
+  animation: spin 2s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite reverse;
+}
+
+.spinner-ring:nth-child(3) {
+  border-top-color: #22d3ee;
+  width: 60%;
+  height: 60%;
+  top: 20%;
+  left: 20%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Enhancements for PostCallCard to stop looking mushed */
+.pcc-root {
+  font-size: 0.95rem; /* Better base size */
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 40px -10px rgba(0,0,0,0.5);
+  margin-top: 20px;
+}
+
+.pcc-header {
+  padding: 24px 30px;
+  gap: 30px;
+}
+
+.pcc-tab-content {
+  padding: 24px 30px;
+  gap: 24px; /* More breathing room between sections */
+}
+
+.pcc-card-block {
+  padding: 24px; /* Unmush the content blocks */
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+}
+
+.pcc-card-block--compact {
+  padding: 18px 24px;
+}
+
+.pcc-caller-layout {
+  gap: 24px;
+}
+
+.pcc-caller-fields {
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.pcc-sh {
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
+  margin-bottom: 16px;
+  color: #94a3b8;
+}
+
+.pcc-prose {
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.pcc-kpi {
+  padding: 12px 18px;
+  gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+}
+
+.pcc-tab {
+  padding: 16px 26px;
+  font-size: 0.92rem;
+}
+
+.pcc-qa-sec {
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.pcc-qa-hdr {
+  padding: 18px 24px;
+  font-size: 1rem;
+}
+
+.pcc-qa-body {
+  padding: 20px 24px;
+  gap: 16px;
+}
+
+.pcc-ri {
+  padding: 16px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  margin-bottom: 8px;
+}
+
+.pcc-f-label {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.pcc-f-val {
+  font-size: 0.95rem;
+}

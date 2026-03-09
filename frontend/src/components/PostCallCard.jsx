@@ -229,9 +229,9 @@ export default function PostCallCard({ evaluation }) {
                         </section>
 
                         {/* Key events timeline */}
-                        {call_events.length > 0 && (
-                            <section className="pcc-card-block">
-                                <h3 className="pcc-sh">📌 Call Events</h3>
+                        <section className="pcc-card-block">
+                            <h3 className="pcc-sh">📌 Call Events</h3>
+                            {call_events.length > 0 ? (
                                 <div className="pcc-events">
                                     {call_events.map((e, i) => (
                                         <div key={i} className="pcc-event">
@@ -244,8 +244,10 @@ export default function PostCallCard({ evaluation }) {
                                         </div>
                                     ))}
                                 </div>
-                            </section>
-                        )}
+                            ) : (
+                                <p className="pcc-text-dim pcc-text-sm" style={{ fontStyle: 'italic', marginTop: '10px' }}>No notable call events were detected during this interaction.</p>
+                            )}
+                        </section>
 
                         {/* FNOL completeness */}
                         <section className="pcc-card-block">
@@ -323,9 +325,9 @@ export default function PostCallCard({ evaluation }) {
                         </section>
 
                         {/* Skill observations */}
-                        {skill_observations.length > 0 && (
-                            <section className="pcc-card-block">
-                                <h3 className="pcc-sh">Skill Observations</h3>
+                        <section className="pcc-card-block">
+                            <h3 className="pcc-sh">Skill Observations</h3>
+                            {skill_observations.length > 0 ? (
                                 <div className="pcc-observations">
                                     {skill_observations.map((obs, i) => (
                                         <div key={i} className={`pcc-obs pcc-obs--${obs.valence}`}>
@@ -340,39 +342,45 @@ export default function PostCallCard({ evaluation }) {
                                         </div>
                                     ))}
                                 </div>
-                            </section>
-                        )}
+                            ) : (
+                                <p className="pcc-text-dim pcc-text-sm" style={{ fontStyle: 'italic', marginTop: '10px' }}>No specific skill observations generated for this call.</p>
+                            )}
+                        </section>
 
                         {/* Strong moments + Procedure gaps side-by-side */}
                         <div className="pcc-2up">
-                            {strong_moments.length > 0 && (
-                                <section className="pcc-card-block">
-                                    <h3 className="pcc-sh" style={{ color: '#34d399' }}>⭐ Strong Moments</h3>
+                            <section className="pcc-card-block">
+                                <h3 className="pcc-sh" style={{ color: '#34d399' }}>⭐ Strong Moments</h3>
+                                {strong_moments.length > 0 ? (
                                     <ul className="pcc-insight-list">
                                         {strong_moments.map((m, i) => (
                                             <li key={i} className="pcc-insight-item pcc-insight-item--pos">{m}</li>
                                         ))}
                                     </ul>
-                                </section>
-                            )}
-                            {procedure_gaps.length > 0 && (
-                                <section className="pcc-card-block">
-                                    <h3 className="pcc-sh" style={{ color: '#f97316' }}>⚠ Procedure Gaps</h3>
+                                ) : (
+                                    <p className="pcc-text-dim pcc-text-sm" style={{ fontStyle: 'italic', marginTop: '10px' }}>No strong moments were identified.</p>
+                                )}
+                            </section>
+                            <section className="pcc-card-block">
+                                <h3 className="pcc-sh" style={{ color: '#f97316' }}>⚠ Procedure Gaps</h3>
+                                {procedure_gaps.length > 0 ? (
                                     <ul className="pcc-insight-list">
                                         {procedure_gaps.map((g, i) => (
                                             <li key={i} className="pcc-insight-item pcc-insight-item--neg">{g}</li>
                                         ))}
                                     </ul>
-                                </section>
-                            )}
+                                ) : (
+                                    <p className="pcc-text-dim pcc-text-sm" style={{ fontStyle: 'italic', marginTop: '10px' }}>No procedure gaps were identified.</p>
+                                )}
+                            </section>
                         </div>
 
                         {/* Pattern indicators (supervisor-facing) */}
-                        {(recurring_risk_indicators.length > 0 || positive_indicators.length > 0) && (
-                            <section className="pcc-card-block">
-                                <h3 className="pcc-sh">Pattern Indicators
-                                    <span className="pcc-sh-sub">Tracked across calls for supervisor review</span>
-                                </h3>
+                        <section className="pcc-card-block">
+                            <h3 className="pcc-sh">Pattern Indicators
+                                <span className="pcc-sh-sub">Tracked across calls for supervisor review</span>
+                            </h3>
+                            {(recurring_risk_indicators.length > 0 || positive_indicators.length > 0) ? (
                                 <div className="pcc-2up">
                                     {positive_indicators.length > 0 && (
                                         <div>
@@ -395,8 +403,10 @@ export default function PostCallCard({ evaluation }) {
                                         </div>
                                     )}
                                 </div>
-                            </section>
-                        )}
+                            ) : (
+                                <p className="pcc-text-dim pcc-text-sm" style={{ fontStyle: 'italic', marginTop: '10px' }}>No recurring behavioral patterns have been identified yet.</p>
+                            )}
+                        </section>
                     </div>
                 )}
 
@@ -511,9 +521,9 @@ export default function PostCallCard({ evaluation }) {
                         </section>
 
                         {/* Missed opportunities */}
-                        {missed_opportunities.length > 0 && (
-                            <section className="pcc-card-block">
-                                <h3 className="pcc-sh">💡 Missed Opportunities</h3>
+                        <section className="pcc-card-block">
+                            <h3 className="pcc-sh">💡 Missed Opportunities</h3>
+                            {missed_opportunities.length > 0 ? (
                                 <div className="pcc-mo-list">
                                     {missed_opportunities.map((mo, i) => (
                                         <div key={i} className="pcc-mo">
@@ -531,15 +541,17 @@ export default function PostCallCard({ evaluation }) {
                                         </div>
                                     ))}
                                 </div>
-                            </section>
-                        )}
+                            ) : (
+                                <p className="pcc-text-dim pcc-text-sm" style={{ fontStyle: 'italic', marginTop: '10px' }}>No missed opportunities were detected.</p>
+                            )}
+                        </section>
 
                         {/* Agent improvement notes */}
-                        {agent_improvement_notes.length > 0 && (
-                            <section className="pcc-card-block">
-                                <h3 className="pcc-sh">📝 Notes for the Agent
-                                    <span className="pcc-sh-sub">Specific to this call</span>
-                                </h3>
+                        <section className="pcc-card-block">
+                            <h3 className="pcc-sh">📝 Notes for the Agent
+                                <span className="pcc-sh-sub">Specific to this call</span>
+                            </h3>
+                            {agent_improvement_notes.length > 0 ? (
                                 <div className="pcc-improve-list">
                                     {agent_improvement_notes.map((note, i) => (
                                         <div key={i} className="pcc-improve-note">
@@ -548,8 +560,10 @@ export default function PostCallCard({ evaluation }) {
                                         </div>
                                     ))}
                                 </div>
-                            </section>
-                        )}
+                            ) : (
+                                <p className="pcc-text-dim pcc-text-sm" style={{ fontStyle: 'italic', marginTop: '10px' }}>No specific improvement notes for this interaction.</p>
+                            )}
+                        </section>
                     </div>
                 )}
 

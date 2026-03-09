@@ -151,27 +151,41 @@ export default function App() {
                     <TranscriptPanel transcripts={transcripts} callActive={callActive} isListening={isListening} />
 
                     {/* ─── Right: Cards Grid or Post-Call Evaluation ─── */}
-                    {showEvaluation && postCallEvaluation ? (
-                        <div className="post-call-overlay">
-                            <div className="post-call-tabs">
-                                <button
-                                    className={`post-call-tab${postCallTab === 0 ? ' active' : ''}`}
-                                    onClick={() => setPostCallTab(0)}
-                                >
-                                    📊 Call Analytics
-                                </button>
-                                <button
-                                    className={`post-call-tab${postCallTab === 1 ? ' active' : ''}`}
-                                    onClick={() => setPostCallTab(1)}
-                                >
-                                    📋 FNOL Report
-                                </button>
+                    {showEvaluation ? (
+                        postCallEvaluation ? (
+                            <div className="post-call-overlay">
+                                <div className="post-call-tabs">
+                                    <button
+                                        className={`post-call-tab${postCallTab === 0 ? ' active' : ''}`}
+                                        onClick={() => setPostCallTab(0)}
+                                    >
+                                        📊 Call Analytics
+                                    </button>
+                                    <button
+                                        className={`post-call-tab${postCallTab === 1 ? ' active' : ''}`}
+                                        onClick={() => setPostCallTab(1)}
+                                    >
+                                        📋 FNOL Report
+                                    </button>
+                                </div>
+                                <div className="post-call-tab-content">
+                                    {postCallTab === 0 && <PostCallCard evaluation={postCallEvaluation} />}
+                                    {postCallTab === 1 && <FNOLFormCard fnolData={postCallEvaluation.fnol_data} />}
+                                </div>
                             </div>
-                            <div className="post-call-tab-content">
-                                {postCallTab === 0 && <PostCallCard evaluation={postCallEvaluation} />}
-                                {postCallTab === 1 && <FNOLFormCard fnolData={postCallEvaluation.fnol_data} />}
+                        ) : (
+                            <div className="post-call-loading-overlay">
+                                <div className="generating-loader">
+                                    <div className="premium-spinner">
+                                        <div className="spinner-ring"></div>
+                                        <div className="spinner-ring"></div>
+                                        <div className="spinner-ring"></div>
+                                    </div>
+                                    <h2>Generating Intelligence Report</h2>
+                                    <p>Analyzing conversation behaviors, skills, and compliance...</p>
+                                </div>
                             </div>
-                        </div>
+                        )
                     ) : (
                         <main className="cards-area">
                             <SuggestionCard suggestion={suggestion} isProcessing={isProcessing} />
