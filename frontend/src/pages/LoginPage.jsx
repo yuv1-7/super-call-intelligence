@@ -18,7 +18,7 @@ export default function LoginPage() {
                     <div className="brand-header">
                         <img src="/logo.png" alt="Extremum Analytics Logo" className="login-logo" />
                         <h1 className="login-title">
-                            Super Call Intelligence
+                            CallIQ
                             <span className="login-badge"><Sparkles size={16} /> AI Powered</span>
                         </h1>
                         <p className="login-subtitle">
