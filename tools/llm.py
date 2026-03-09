@@ -968,7 +968,7 @@ Score every criterion. Provide direct agent quote as evidence or "Not observed i
         ],
         temperature=0.1,
         max_tokens=4000,
-        response_format=AgentRubric,
+        response_format=RubricEvaluation,
     )
     return response.choices[0].message.parsed.model_dump()
 

@@ -432,3 +432,7 @@ if os.path.isdir(frontend_dist):
     @app.get("/favicon.ico")
     async def serve_favicon():
         return FileResponse(os.path.join(frontend_dist, "favicon.ico"))
+
+    @app.get("/pcm-processor.js")
+    async def serve_pcm_processor():
+        return FileResponse(os.path.join(frontend_dist, "pcm-processor.js"))
