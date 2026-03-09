@@ -1043,7 +1043,17 @@ async def generate_post_call_evaluation(
         accumulated_facts=accumulated_facts,
     )
 
-    overall_score = min(sum(s["points_awarded"] for s in rubric_result["sections"]), 100)
+    # Extract the 7 sections from the structured output
+    extracted_sections = [
+        rubric_result["section_1_opening"],
+        rubric_result["section_2_identity"],
+        rubric_result["section_3_information"],
+        rubric_result["section_4_empathy"],
+        rubric_result["section_5_procedure"],
+        rubric_result["section_6_compliance"],
+        rubric_result["section_7_close"],
+    ]
+    overall_score = min(sum(s["points_awarded"] for s in extracted_sections), 100)
     grade = _calculate_grade(overall_score)
 
     # Insights generation
