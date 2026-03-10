@@ -278,6 +278,14 @@ async def stream_endpoint(websocket: WebSocket):
                     for key, val in new_facts.items():
                         if val is not None:
                             accumulated_facts[key] = val
+                            
+                # Try to fetch member from accumulated facts if not already detected
+                if not detected_member and accumulated_facts.get("policy_number"):
+                    policy_id = accumulated_facts["policy_number"]
+                    member = get_member(policy_id=policy_id)
+                    if member:
+                        detected_member = member
+                        logger.info(f"🧠 Slow path: Found member {policy_id} via accumulated facts")
 
                 logger.info(f"📋 Accumulated facts: {accumulated_facts}")
 
