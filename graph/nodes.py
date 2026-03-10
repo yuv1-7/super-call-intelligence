@@ -26,9 +26,15 @@ async def intent_node(state: dict) -> dict:
 async def entity_node(state: dict) -> dict:
     """
     Extract policy IDs, names, and phones from the transcript using LLM.
+    We pass a short context window of the most recent transcript lines to stitch together split numbers.
     """
-    text = state["transcript"]
-    entities = await extract_entities(text)
+    # Extract last 6 lines of full transcript for context without blowing up tokens
+    recent_context = state["transcript"]
+    if state.get("full_transcript"):
+        lines = state["full_transcript"].split('\n')
+        recent_context = '\n'.join(lines[-6:])
+
+    entities = await extract_entities(recent_context)
 
     # Clean up empty entities to keep state clean
     cleaned_entities = {k: v for k, v in entities.items() if v is not None}

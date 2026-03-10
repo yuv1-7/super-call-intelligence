@@ -147,10 +147,12 @@ async def extract_entities(transcript: str) -> dict:
     """Use LLM to extract names, phone numbers, and policy IDs from transcript."""
     
     system_prompt = """You are an insurance entity extraction system.
-Analyze the caller's statement (which may be in any language, or a mix of languages) and extract the following if present. Your output must be in English:
-- "policy_id": formatted strictly as CAR-XXXXXX, LIFE-XXXXXX, or MED-XXXXXX. If the user speaks the numbers in another language (e.g., Hindi "ek do teen"), you MUST translate them to English digits (123).
+Analyze the provided transcript segment (which may contain multiple sentences in any language or mix of languages) and extract the following if present. Your output must be in English:
+- "policy_id": formatted strictly as CAR-XXXXXX, LIFE-XXXXXX, or MED-XXXXXX. 
+  * CRITICAL: The policy number might be split across multiple sentences (e.g., "My policy is Life.", "Two zero zero zero zero one"). You MUST stitch them together into "LIFE-200001".
+  * CRITICAL: If the user speaks the numbers as words in any language (e.g., Hindi "do lakh ek", "ek do teen", Spanish "uno dos tres"), you MUST translate them to English digits (123).
 - "name": full or partial name of the caller.
-- "phone": phone number referenced. You MUST translate any spoken numbers into English digits.
+- "phone": phone number referenced. You MUST translate any spoken numbers into English digits and stitch them if split across sentences.
 Return null for fields not found."""
 
     response = await client.beta.chat.completions.parse(
@@ -263,8 +265,9 @@ Generate a professional, empathetic, and compliance-aware suggested response for
 
 Core Rules:
 - **LANGUAGE & COLLOQUIAL TONE (CRITICAL LAYER)**: 
-  * You MUST analyze the transcript to detect the caller's language and manner (e.g., pure English, Hindi, German, mixed Hinglish).
-  * Your output language MUST perfectly match the caller's input language. If they speak 100% English, respond in 100% English. If they speak a mix, mirror that mix.
+  * You MUST analyze the transcript to detect the caller's language and manner.
+  * Your output language MUST perfectly match the caller's input language. 
+  * **CRITICAL**: If `Detected Caller Languages (BCP-47)` is provided in the prompt, it lists the exact languages the caller is speaking (e.g., "hi, en" means a mix of Hindi and English). You MUST use a natural mix of exactly these languages in your response. If they mix languages, you MUST mix languages in the exact same proportion to sound natural.
   * ALWAYS use phonetic English (Romanized script) for your output, regardless of the language spoken. NO Devanagari, Cyrillic, or other scripts.
   * CRITICAL RULE - MODERN & NATURAL: Do NOT use formal, "textbook" translations or overly pure vocabulary (e.g., do NOT translate "state", "accident", "process", or "insurance" into pure Hindi like "rajya", "durghatna", or "bima"). Real people use English loan words constantly. Write EXACTLY how a modern native speaker talks in daily life (e.g., "Aap kis state se hain?", "Accident kahan hua?").
   * EMOTIONAL AWARENESS: Be naturally empathetic when appropriate (e.g., if there's an accident, ask about safety/injuries immediately), but maintain conversational flow. Don't be robotic.
@@ -472,10 +475,12 @@ def _build_user_prompt(
     compliance_alerts: list[dict] | None,
     collected_facts: dict | None = None,
     claim_type: str | None = None,
+    caller_languages: list[str] | None = None,
 ) -> str:
     """Build the user prompt for the agent suggestion functions."""
+    langs_context = f"\nDetected Caller Languages (BCP-47): {', '.join(caller_languages)}" if caller_languages else ""
     return f"""Recent Caller's Statement:
-{transcript}
+{transcript}{langs_context}
 
 Full Conversation Context:
 {full_transcript or 'None yet'}
@@ -517,12 +522,13 @@ async def generate_agent_suggestion(
     knowledge_docs: list[dict] | None,
     compliance_alerts: list[dict] | None,
     collected_facts: dict | None = None,
+    caller_languages: list[str] | None = None,
 ) -> str:
     """Generate a contextual suggested response for the call center agent."""
 
     system_prompt = _select_prompt(claim_type)
     user_prompt = _build_user_prompt(
-        transcript, full_transcript, intent, member_data, knowledge_docs, compliance_alerts, collected_facts, claim_type
+        transcript, full_transcript, intent, member_data, knowledge_docs, compliance_alerts, collected_facts, claim_type, caller_languages
     )
 
     response = await client.chat.completions.create(
@@ -547,12 +553,13 @@ async def generate_agent_suggestion_stream(
     knowledge_docs: list[dict] | None,
     compliance_alerts: list[dict] | None,
     collected_facts: dict | None = None,
+    caller_languages: list[str] | None = None,
 ):
     """Generate a contextual suggested response for the call center agent, streaming chunks."""
 
     system_prompt = _select_prompt(claim_type)
     user_prompt = _build_user_prompt(
-        transcript, full_transcript, intent, member_data, knowledge_docs, compliance_alerts, collected_facts, claim_type
+        transcript, full_transcript, intent, member_data, knowledge_docs, compliance_alerts, collected_facts, claim_type, caller_languages
     )
 
     response = await client.chat.completions.create(

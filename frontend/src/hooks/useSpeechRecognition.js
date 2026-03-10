@@ -130,12 +130,20 @@ export function useDeepgramSpeech({ onTranscript }) {
                             const channelIdx = msg.channel_index?.[0] ?? 0;
                             const speaker = String(channelIdx);
 
+                            // Extract detected languages if available
+                            let detectedLanguages = alt.languages || msg.channel?.languages || [];
+                            if (!detectedLanguages.length && alt.words) {
+                                const langs = alt.words.map(w => w.language).filter(Boolean);
+                                detectedLanguages = [...new Set(langs)];
+                            }
+
                             const stableOffset = Math.round(start * 100) / 100;
 
                             console.log(
                                 `${isFinal ? '📝 FINAL' : '💬 Partial'} ` +
                                 `[Ch${channelIdx} → ${channelIdx === 0 ? 'Agent' : 'Customer'}]: ` +
-                                `${text.slice(0, 60)}`
+                                `${text.slice(0, 60)}` + 
+                                (detectedLanguages.length > 0 ? ` [Langs: ${detectedLanguages.join(',')}]` : '')
                             );
 
                             onTranscript?.({
@@ -143,6 +151,7 @@ export function useDeepgramSpeech({ onTranscript }) {
                                 speaker,
                                 isFinal,
                                 offset: stableOffset,
+                                languages: detectedLanguages,
                             });
                         }
                     } catch (err) {

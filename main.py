@@ -174,6 +174,7 @@ async def stream_endpoint(websocket: WebSocket):
             is_finalized: bool = data.get("is_finalized", False)
             speaker: str = data.get("speaker", "Unknown")
             offset: int = data.get("offset", 0)
+            languages: list = data.get("languages", [])
 
             if not text.strip():
                 continue
@@ -183,7 +184,7 @@ async def stream_endpoint(websocket: WebSocket):
 
             logger.info(
                 f"{'📝 FINAL' if is_finalized else '💬 Partial'} "
-                f"[{speaker_label}]: {text[:80]}"
+                f"[{speaker_label}]: {text[:80]}" + (f" [Langs: {','.join(languages)}]" if languages else "")
             )
 
             # Store in call transcript (only finalized)
@@ -194,6 +195,7 @@ async def stream_endpoint(websocket: WebSocket):
                     "text": text,
                     "timestamp": timestamp,
                     "offset": offset,
+                    "languages": languages,
                 })
 
             # Always echo the transcript back for display immediately
@@ -341,6 +343,13 @@ async def stream_endpoint(websocket: WebSocket):
                     if parts:
                         member_data_for_llm = f"LOOKUP FAILED: No account found for {' or '.join(parts)}. The caller may have provided incorrect information."
 
+                # Get the most recent languages detected for the customer
+                customer_languages = []
+                for line in reversed(call_transcript):
+                    if line["speaker"] == "Customer" and line.get("languages"):
+                        customer_languages = line["languages"]
+                        break
+
                 logger.info(f"📚 Knowledge docs passed to LLM: {[d.get('docId', 'unknown') for d in knowledge_docs]}")
                 suggestion_stream = generate_agent_suggestion_stream(
                     transcript=text,
@@ -351,6 +360,7 @@ async def stream_endpoint(websocket: WebSocket):
                     knowledge_docs=knowledge_docs,
                     compliance_alerts=result.get("compliance_alerts"),
                     collected_facts=accumulated_facts,
+                    caller_languages=customer_languages,
                 )
                 
                 async for chunk in suggestion_stream:

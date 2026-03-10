@@ -84,6 +84,7 @@ export function useWebSocket(url) {
                             speaker: data.speaker || '',
                             timestamp: data.timestamp || '',
                             offset: data.offset,
+                            languages: data.languages || [],
                             id: Date.now(),
                         }];
                     }
@@ -95,6 +96,7 @@ export function useWebSocket(url) {
                         speaker: data.speaker || '',
                         timestamp: data.timestamp || '',
                         offset: data.offset,
+                        languages: data.languages || [],
                         id: Date.now(),
                     }];
                 });
@@ -153,13 +155,14 @@ export function useWebSocket(url) {
         }
     }, []);
 
-    const sendMessage = useCallback((text, isFinalized = true, speaker = 'Unknown', offset = 0) => {
+    const sendMessage = useCallback((text, isFinalized = true, speaker = 'Unknown', offset = 0, languages = []) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({
                 text,
                 is_finalized: isFinalized,
                 speaker,
                 offset,
+                languages,
             }));
         }
     }, []);

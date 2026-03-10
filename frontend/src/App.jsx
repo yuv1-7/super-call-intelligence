@@ -43,7 +43,7 @@ export default function App() {
     // Deepgram Speech callback — sends each utterance to the backend
     const onDeepgramTranscript = useCallback(
         (event) => {
-            sendMessage(event.text, event.isFinal, event.speaker, event.offset);
+            sendMessage(event.text, event.isFinal, event.speaker, event.offset, event.languages);
         },
         [sendMessage]
     );
