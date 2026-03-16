@@ -4,6 +4,7 @@
 
 import os
 import logging
+import functools
 from typing import Optional
 
 logger = logging.getLogger("call-intelligence")
@@ -19,6 +20,7 @@ TARGET_DIMENSION = 1536
 # ─── Module-level singletons ─── #
 _search_client = None
 _embedding_model = None
+_embedding_cache: dict[str, list[float]] = {}  # In-memory cache for query embeddings
 
 
 def _azure_available() -> bool:
@@ -84,7 +86,12 @@ def warmup():
 
 
 def _embed_query(text: str) -> list[float]:
-    """Embed a single query string using the local BGE model, padded to TARGET_DIMENSION."""
+    """Embed a single query string using the local BGE model, padded to TARGET_DIMENSION.
+    Results are cached in-memory to avoid re-computing embeddings for repeated queries."""
+    # Check in-memory cache first
+    if text in _embedding_cache:
+        return _embedding_cache[text]
+
     import torch
     import torch.nn.functional as F
 
@@ -101,7 +108,13 @@ def _embed_query(text: str) -> list[float]:
     # Re-normalize for cosine similarity
     embedding = F.normalize(embedding, p=2, dim=1)
 
-    return embedding[0].cpu().numpy().tolist()
+    result = embedding[0].cpu().numpy().tolist()
+
+    # Cache the result (cap cache size to prevent unbounded memory growth)
+    if len(_embedding_cache) < 64:
+        _embedding_cache[text] = result
+
+    return result
 
 
 # ══════════════════════════════════════════════════════

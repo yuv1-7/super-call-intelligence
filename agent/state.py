@@ -25,5 +25,8 @@ class AgentState(TypedDict):
     # Pre-fetched knowledge (injected into prompt to avoid tool call latency)
     knowledge_docs: Optional[list]
     
+    # Pre-fetched compliance alerts (injected into prompt to avoid tool call latency)
+    compliance_alerts: Optional[list]
+    
     # Detected caller languages (BCP-47 tags from Deepgram)
     caller_languages: Optional[list]

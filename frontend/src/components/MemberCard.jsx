@@ -13,23 +13,25 @@ export default function MemberCard({ member }) {
         );
     }
 
-    // Determine policy type from policy_number prefix
-    const policyNumber = member.policy_number || '';
-    const isLifePolicy = policyNumber.toUpperCase().startsWith('LIFE');
-    const isMedicalPolicy = policyNumber.toUpperCase().startsWith('MED');
-    const isCarPolicy = policyNumber.toUpperCase().startsWith('CAR');
+    // Determine policy type from policyId prefix (CAR-, LIFE-, MED-)
+    const policyId = member.policyId || '';
+    const isLifePolicy = policyId.toUpperCase().startsWith('LIFE');
+    const isMedicalPolicy = policyId.toUpperCase().startsWith('MED');
+    const isCarPolicy = policyId.toUpperCase().startsWith('CAR');
 
-    // Coverage limits (car)
-    const limits = member.coverage_limits || {};
-    const collisionDeductible = limits.collision_deductible || 'N/A';
-    const comprehensiveDeductible = limits.comprehensive_deductible || 'N/A';
-    const bodilyInjury = limits.bodily_injury || 'N/A';
-    const propertyDamage = limits.property_damage || 'N/A';
+    // Vehicle is a nested object { make, model, year, color, vin, licensePlate }
+    const vehicle = member.vehicle || {};
+    const vehicleDisplay = vehicle.make
+        ? `${vehicle.year} ${vehicle.make} ${vehicle.model}`
+        : null;
 
-    // Add-ons
-    const addOns = member.add_ons || [];
+    // Add-ons (camelCase from backend)
+    const addOns = member.addOns || [];
 
-    // Medical-specific fields
+    // Medical sub-limits (nested object)
+    const subLimits = member.subLimits || {};
+
+    // Medical-specific arrays
     const networkHospitals = member.networkHospitals || [];
     const coveredConditions = member.coveredConditions || [];
 
@@ -39,7 +41,7 @@ export default function MemberCard({ member }) {
                 <div className="card-icon">👤</div>
                 <div>
                     <div className="card-title">{member.name}</div>
-                    <div className="card-subtitle">{policyNumber}</div>
+                    <div className="card-subtitle">{policyId}</div>
                 </div>
             </div>
             <div className="card-body">
@@ -47,48 +49,44 @@ export default function MemberCard({ member }) {
                     <div className="member-field">
                         <span className="label">Status</span>
                         <span className="value">
-                            <span className={`member-badge ${member.policy_status === 'ACTIVE' ? 'active' : ''}`}>
-                                {member.policy_status || 'Unknown'}
+                            <span className={`member-badge ${member.status === 'Active' ? 'active' : ''}`}>
+                                {member.status || 'Unknown'}
                             </span>
                         </span>
                     </div>
                     <div className="member-field">
-                        <span className="label">DOB</span>
-                        <span className="value">{member.dob || 'N/A'}</span>
+                        <span className="label">Age</span>
+                        <span className="value">{member.age || 'N/A'}</span>
                     </div>
 
                     {/* Car-specific fields */}
-                    {isCarPolicy && member.vehicle && (
+                    {isCarPolicy && vehicleDisplay && (
                         <>
                             <div className="member-field">
                                 <span className="label">Vehicle</span>
-                                <span className="value">{member.vehicle}</span>
+                                <span className="value">{vehicleDisplay}</span>
                             </div>
                             <div className="member-field">
                                 <span className="label">VIN</span>
-                                <span className="value">{member.vin || 'N/A'}</span>
+                                <span className="value">{vehicle.vin || 'N/A'}</span>
+                            </div>
+                            <div className="member-field">
+                                <span className="label">License Plate</span>
+                                <span className="value">{vehicle.licensePlate || 'N/A'}</span>
                             </div>
                         </>
                     )}
 
-                    {/* Car coverage limits */}
+                    {/* Car coverage details */}
                     {isCarPolicy && (
                         <>
                             <div className="member-field">
-                                <span className="label">Bodily Injury</span>
-                                <span className="value">{bodilyInjury}</span>
+                                <span className="label">Coverage</span>
+                                <span className="value">${(member.coverageAmount || 0).toLocaleString()}</span>
                             </div>
                             <div className="member-field">
-                                <span className="label">Property Damage</span>
-                                <span className="value">{propertyDamage}</span>
-                            </div>
-                            <div className="member-field">
-                                <span className="label">Collision Deductible</span>
-                                <span className="value">{collisionDeductible}</span>
-                            </div>
-                            <div className="member-field">
-                                <span className="label">Comp. Deductible</span>
-                                <span className="value">{comprehensiveDeductible}</span>
+                                <span className="label">Deductible</span>
+                                <span className="value">${(member.deductible || 0).toLocaleString()}</span>
                             </div>
                         </>
                     )}
@@ -104,6 +102,10 @@ export default function MemberCard({ member }) {
                     {/* Life-specific fields */}
                     {isLifePolicy && member.beneficiaries && (
                         <>
+                            <div className="member-field">
+                                <span className="label">Coverage</span>
+                                <span className="value">${(member.coverageAmount || 0).toLocaleString()}</span>
+                            </div>
                             <div className="member-field full-width">
                                 <span className="label">Beneficiaries</span>
                                 <span className="value">
@@ -121,20 +123,24 @@ export default function MemberCard({ member }) {
                     {isMedicalPolicy && (
                         <>
                             <div className="member-field">
-                                <span className="label">Sum Insured</span>
-                                <span className="value">{member.sumInsured || 'N/A'}</span>
+                                <span className="label">Coverage</span>
+                                <span className="value">${(member.coverageAmount || 0).toLocaleString()}</span>
                             </div>
                             <div className="member-field">
                                 <span className="label">Copay</span>
-                                <span className="value">{member.copayPercentage || 'N/A'}</span>
+                                <span className="value">{member.copay != null ? `${member.copay}%` : 'N/A'}</span>
                             </div>
                             <div className="member-field">
-                                <span className="label">Room Rent Cap</span>
-                                <span className="value">{member.roomRentCap || 'N/A'}</span>
+                                <span className="label">Deductible</span>
+                                <span className="value">${(member.deductible || 0).toLocaleString()}</span>
                             </div>
                             <div className="member-field">
-                                <span className="label">ICU Cap</span>
-                                <span className="value">{member.icuCap || 'N/A'}</span>
+                                <span className="label">Room Rent</span>
+                                <span className="value">{subLimits.roomRent || 'N/A'}</span>
+                            </div>
+                            <div className="member-field">
+                                <span className="label">ICU</span>
+                                <span className="value">{subLimits.icu || 'N/A'}</span>
                             </div>
                             <div className="member-field">
                                 <span className="label">Pre-Existing</span>
@@ -159,9 +165,9 @@ export default function MemberCard({ member }) {
                         <span className="label">Phone</span>
                         <span className="value">{member.phone || 'N/A'}</span>
                     </div>
-                    <div className="member-field full-width">
-                        <span className="label">Address</span>
-                        <span className="value">{member.address || 'N/A'}</span>
+                    <div className="member-field">
+                        <span className="label">Email</span>
+                        <span className="value">{member.email || 'N/A'}</span>
                     </div>
                 </div>
             </div>

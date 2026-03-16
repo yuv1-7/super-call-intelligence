@@ -6,6 +6,7 @@
 
 import os
 import json
+import asyncio
 import logging
 from typing import Optional
 from openai import AsyncOpenAI
@@ -447,14 +448,25 @@ async def generate_post_call_evaluation(
     # Instant FNOL scoring
     fnol_result = calculate_fnol_completeness(accumulated_facts, claim_type)
 
-    # Rubric scoring (Call A)
-    rubric_result = await _run_agent_rubric(
-        formatted_transcript=formatted_transcript,
-        call_duration=call_duration,
-        detected_intent=detected_intent,
-        member_data=member_data,
-        claim_type=claim_type,
-        accumulated_facts=accumulated_facts,
+    # Rubric scoring (Call A) and Insights generation (Call B) — run in parallel
+    # Insights receives overall_score=0 since its quality doesn't depend on the exact score
+    rubric_result, insights_result = await asyncio.gather(
+        _run_agent_rubric(
+            formatted_transcript=formatted_transcript,
+            call_duration=call_duration,
+            detected_intent=detected_intent,
+            member_data=member_data,
+            claim_type=claim_type,
+            accumulated_facts=accumulated_facts,
+        ),
+        _run_call_insights(
+            formatted_transcript=formatted_transcript,
+            call_duration=call_duration,
+            detected_intent=detected_intent,
+            overall_score=0,  # Placeholder — insights quality doesn't depend on exact score
+            member_data=member_data,
+            claim_type=claim_type,
+        ),
     )
 
     # Extract the 7 sections from the structured output
@@ -469,16 +481,6 @@ async def generate_post_call_evaluation(
     ]
     overall_score = min(sum(s["points_awarded"] for s in extracted_sections), 100)
     grade = _calculate_grade(overall_score)
-
-    # Insights generation (Call B)
-    insights_result = await _run_call_insights(
-        formatted_transcript=formatted_transcript,
-        call_duration=call_duration,
-        detected_intent=detected_intent,
-        overall_score=overall_score,
-        member_data=member_data,
-        claim_type=claim_type,
-    )
 
     ci = insights_result.get("caller_insights", {})
 

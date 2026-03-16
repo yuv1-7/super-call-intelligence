@@ -72,7 +72,7 @@ def _format_collected_facts(facts: dict | None, claim_type: str | None = None) -
             known.append(f"  ✅ {label}: {val}")
         else:
             unknown.append(f"  ❓ {label}: NOT YET PROVIDED")
-    return "ALREADY COLLECTED (do NOT ask again):\\n" + "\\n".join(known) + "\\n\\nSTILL MISSING (ask for these if relevant):\\n" + "\\n".join(unknown)
+    return "ALREADY COLLECTED (do NOT ask again):\n" + "\n".join(known) + "\n\nSTILL MISSING (ask for these if relevant):\n" + "\n".join(unknown)
 
 
 # ─── SHARED BASE RULES (apply to ALL claim types) ─── #
@@ -231,6 +231,38 @@ def _format_knowledge_docs(docs: list | None) -> str:
     return "\n\n".join(sections)
 
 
+def _format_compliance_alerts(alerts: list | None) -> str:
+    """Format pre-fetched compliance alerts for inclusion in the system prompt."""
+    if not alerts:
+        return "No compliance alerts loaded. Use `check_compliance_rules` tool if needed."
+    
+    sections = []
+    for i, alert in enumerate(alerts, 1):
+        title = alert.get('title', 'Untitled')
+        severity = alert.get('severity', 'MEDIUM')
+        content = alert.get('content', '')
+        section = alert.get('section_heading', '')
+        header = f"--- Alert {i} [{severity}]: {title}"
+        if section:
+            header += f" > {section}"
+        header += " ---"
+        sections.append(f"{header}\n{content}")
+    
+    return "\n\n".join(sections)
+
+
+def _truncate_transcript(full_transcript: str, max_lines: int = 15) -> str:
+    """Keep only the most recent transcript lines to bound input token count.
+    Includes a note about truncation if lines were omitted."""
+    if not full_transcript:
+        return "None yet"
+    lines = full_transcript.strip().split("\n")
+    if len(lines) <= max_lines:
+        return full_transcript
+    truncated = lines[-max_lines:]
+    return f"[... {len(lines) - max_lines} earlier lines omitted ...]\n" + "\n".join(truncated)
+
+
 def generate_system_prompt(
     intent: Optional[str] = None,
     claim_type: Optional[str] = None,
@@ -238,6 +270,7 @@ def generate_system_prompt(
     collected_facts: Optional[dict] = None,
     full_transcript: str = "",
     knowledge_docs: Optional[list] = None,
+    compliance_alerts: Optional[list] = None,
     caller_languages: Optional[list[str]] = None,
 ) -> str:
     """Dynamically builds the system message with current context."""
@@ -251,12 +284,14 @@ def generate_system_prompt(
     facts_text = _format_collected_facts(collected_facts, claim_type)
     member_text = member_data if member_data else "Not yet identified"
     knowledge_text = _format_knowledge_docs(knowledge_docs)
+    compliance_text = _format_compliance_alerts(compliance_alerts)
+    transcript_text = _truncate_transcript(full_transcript)
     langs_context = f"\nDetected Caller Languages (BCP-47): {', '.join(caller_languages)}" if caller_languages else ""
     
     return f"""{base_rules}
 
 Recent Conversation Context:
-{full_transcript or 'None yet'}{langs_context}
+{transcript_text}{langs_context}
 
 Current Detected Intent: {intent or 'unknown'}
 Current Claim Type: {claim_type or 'unknown'}
@@ -273,4 +308,10 @@ CRITICAL: Items marked ✅ above have ALREADY been provided. You are FORBIDDEN f
 {knowledge_text}
 ══════════════════════════════════════
 Use the information above to guide the caller. Do NOT call `search_knowledge_base` unless you need info on a topic NOT covered above.
+
+══════ COMPLIANCE ALERTS ══════
+{compliance_text}
+════════════════════════════════
+These compliance alerts have been PRE-LOADED. Reference them directly — do NOT call `check_compliance_rules` unless you need compliance info on a DIFFERENT topic not covered above.
 """
+

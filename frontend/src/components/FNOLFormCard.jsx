@@ -12,9 +12,9 @@ export default function FNOLFormCard({ fnolData }) {
 
     const { facts = {}, member, intent } = fnolData;
 
-    const isCarClaim = intent?.startsWith('car_') || member?.policy_number?.startsWith('CAR');
-    const isLifeClaim = intent?.startsWith('life_') || member?.policy_number?.startsWith('LIFE');
-    const isMedicalClaim = intent?.startsWith('medical_') || member?.policy_number?.startsWith('MED');
+    const isCarClaim = intent?.startsWith('car_') || member?.policyId?.startsWith('CAR');
+    const isLifeClaim = intent?.startsWith('life_') || member?.policyId?.startsWith('LIFE');
+    const isMedicalClaim = intent?.startsWith('medical_') || member?.policyId?.startsWith('MED');
 
     // Generate a mock claim reference number
     const claimRef = isCarClaim
@@ -38,7 +38,7 @@ export default function FNOLFormCard({ fnolData }) {
 
         const opt = {
             margin: [0.4, 0.5, 0.4, 0.5],
-            filename: `FNOL_${member?.policy_number || 'Unknown'}_${claimRef}.pdf`,
+            filename: `FNOL_${member?.policyId || 'Unknown'}_${claimRef}.pdf`,
             image: { type: 'jpeg', quality: 0.98 },
             html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
             jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
@@ -115,7 +115,7 @@ export default function FNOLFormCard({ fnolData }) {
                     </h3>
                     <div className="fnol-grid">
                         <Field label="Full Name" value={member?.name} />
-                        <Field label="Policy Number" value={member?.policy_number || facts.policy_number} />
+                        <Field label="Policy Number" value={member?.policyId || facts.policy_number} />
                         <Field label="Phone" value={member?.phone} />
                         <Field label="Email" value={member?.email} />
                         <Field label="Policy Type" value={member?.policyType} />

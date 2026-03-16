@@ -23,15 +23,18 @@ export default function ComplianceCard({ alerts }) {
                 </div>
             </div>
             <div className="card-body">
-                {alerts.map((alert) => (
-                    <div key={alert.ruleId} className={`compliance-alert ${alert.severity}`}>
+                {alerts.map((alert, idx) => {
+                    const sev = (alert.severity || 'medium').toLowerCase();
+                    return (
+                    <div key={alert.document_id || alert.ruleId || idx} className={`compliance-alert ${sev}`}>
                         <div className="alert-title">
-                            {alert.severity === 'critical' ? '🚨' : alert.severity === 'high' ? '⚠️' : '📋'}{' '}
+                            {sev === 'critical' ? '🚨' : sev === 'high' ? '⚠️' : '📋'}{' '}
                             {alert.title}
                         </div>
-                        {alert.message}
+                        {alert.content || alert.message}
                     </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );

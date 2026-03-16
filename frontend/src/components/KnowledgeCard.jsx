@@ -6,7 +6,7 @@ export default function KnowledgeCard({ docs }) {
     // Auto-expand the first article when docs arrive
     useEffect(() => {
         if (docs && docs.length > 0 && Object.keys(expandedDocs).length === 0) {
-            setExpandedDocs({ [docs[0].docId]: true });
+            setExpandedDocs({ [docs[0].document_id || 0]: true });
         }
     }, [docs]);
 
@@ -38,13 +38,13 @@ export default function KnowledgeCard({ docs }) {
                 </div>
             </div>
             <div className="card-body">
-                {docs.map((doc) => (
+                {docs.map((doc, idx) => (
                     <div
-                        key={doc.docId}
-                        className={`knowledge-article ${expandedDocs[doc.docId] ? 'expanded' : ''}`}
-                        onClick={() => toggleDoc(doc.docId)}
+                        key={doc.document_id || idx}
+                        className={`knowledge-article ${expandedDocs[doc.document_id || idx] ? 'expanded' : ''}`}
+                        onClick={() => toggleDoc(doc.document_id || idx)}
                     >
-                        <div className="doc-id">{doc.docId}</div>
+                        {doc.document_id && <div className="doc-id">{doc.document_id}</div>}
                         <h4>
                             {doc.title}
                             <span className="expand-icon">▼</span>
