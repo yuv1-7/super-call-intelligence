@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 
 from data.members import get_member
@@ -80,7 +80,7 @@ async def get_deepgram_token():
     deepgram_key = os.getenv("DEEPGRAM_API_KEY", "")
 
     if not deepgram_key:
-        return {"error": "DEEPGRAM_API_KEY not configured on the server"}, 500
+        return JSONResponse({"error": "DEEPGRAM_API_KEY not configured on the server"}, status_code=500)
 
     return {"token": deepgram_key}
 
@@ -286,6 +286,10 @@ async def stream_endpoint(websocket: WebSocket):
                     if member:
                         detected_member = member
                         logger.info(f"🧠 Slow path: Found member {policy_id} via accumulated facts")
+                        await websocket.send_json({
+                            "type": "member_profile",
+                            "data": member,
+                        })
 
                 logger.info(f"📋 Accumulated facts: {accumulated_facts}")
 
