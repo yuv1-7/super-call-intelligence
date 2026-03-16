@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useWebSocket } from './hooks/useWebSocket.js';
-import { useAzureSpeech } from './hooks/useSpeechRecognition.js';
+import { useDeepgramSpeech } from './hooks/useSpeechRecognition.js';
 import { SignedIn, SignedOut, UserButton } from '@clerk/clerk-react';
 import TranscriptPanel from './components/TranscriptPanel.jsx';
 import MemberCard from './components/MemberCard.jsx';
@@ -41,17 +41,17 @@ export default function App() {
         resetState,
     } = useWebSocket(WS_URL);
 
-    // Azure Speech callback — sends each utterance to the backend
-    const onAzureTranscript = useCallback(
+    // Deepgram Speech callback — sends each utterance to the backend
+    const onTranscript = useCallback(
         (event) => {
-            sendMessage(event.text, event.isFinal, event.speaker, event.offset);
+            sendMessage(event.text, event.isFinal, event.speaker, event.offset, event.languages || []);
         },
         [sendMessage]
     );
 
-    // Azure Speech hook — token fetched from backend
-    const { isListening, error: speechError, toggleListening } = useAzureSpeech({
-        onTranscript: onAzureTranscript,
+    // Deepgram Speech hook — token fetched from backend
+    const { isListening, error: speechError, toggleListening } = useDeepgramSpeech({
+        onTranscript,
     });
 
     // ─── Call Lifecycle ─── //
@@ -104,9 +104,9 @@ export default function App() {
                     {/* ─── Header ─── */}
                     <header className="app-header">
                         <div className="header-brand">
-                            <img src="/logo.png" alt="Extremum Analytics Logo" className="app-logo" />
+                            <img src="/logo.png" alt="CallIQ Logo" className="app-logo" />
                             <h1>
-                                <span className="brand-title">Super Call Intelligence</span>
+                                <span className="brand-title">CallIQ</span>
                                 <span className="brand-subtitle">Dashboard</span>
                             </h1>
                         </div>
@@ -189,7 +189,7 @@ export default function App() {
                     {/* Speech error toast */}
                     {speechError && (
                         <div className="error-toast">
-                            ⚠️ Azure Speech: {speechError}
+                            ⚠️ Speech Error: {speechError}
                         </div>
                     )}
                 </div>

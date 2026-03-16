@@ -16,15 +16,25 @@ FAST_MODEL = "gpt-4.1-nano"
 # ═══════════════════════════════════════════════════════
 
 class IntentClassification(BaseModel):
+    english_translation: str
     intent: Literal[
         "car_accident",
         "car_theft",
         "car_vandalism",
         "life_death_claim",
         "life_accidental_death",
+        "medical_hospitalization",
+        "medical_outpatient",
+        "medical_critical_illness",
         "general_inquiry",
     ]
-    claim_type: Literal["car_insurance", "life_insurance", "general"]
+    claim_type: Literal["car_insurance", "life_insurance", "medical_insurance", "general"]
+
+
+class EntityExtraction(BaseModel):
+    policy_id: str | None
+    name: str | None
+    phone: str | None
 
 
 class ClaimFacts(BaseModel):
@@ -42,6 +52,14 @@ class ClaimFacts(BaseModel):
     police_report_filed: bool | None
     police_report_number: str | None
     other_parties_involved: str | None
+    # Medical-specific fields
+    hospital_name: str | None
+    admission_date: str | None
+    discharge_date: str | None
+    diagnosis: str | None
+    treating_doctor: str | None
+    cashless_or_reimbursement: str | None
+    pre_authorization_number: str | None
 
 
 # ═══════════════════════════════════════════════════════
@@ -52,7 +70,8 @@ async def classify_intent(transcript: str) -> dict:
     """Use LLM to classify the caller's intent into an FNOL category."""
 
     system_prompt = """You are an insurance call classification system.
-Analyze the caller's statement and classify it.
+Analyze the caller's statement (which may be in English, another language, or a mix of languages) and classify it.
+- "english_translation": an accurate English translation of what the caller said (if they spoke in English, just repeat it).
 - "intent": the most fitting FNOL category.
 - "claim_type": the broad insurance line the intent falls under."""
 
@@ -63,8 +82,38 @@ Analyze the caller's statement and classify it.
             {"role": "user", "content": transcript},
         ],
         temperature=0.0,
-        max_tokens=100,
+        max_tokens=150,
         response_format=IntentClassification,
+    )
+
+    return response.choices[0].message.parsed.model_dump()
+
+
+# ═══════════════════════════════════════════════════════
+# ENTITY EXTRACTION — Structured Output
+# ═══════════════════════════════════════════════════════
+
+async def extract_entities(transcript: str) -> dict:
+    """Use LLM to extract names, phone numbers, and policy IDs from transcript."""
+    
+    system_prompt = """You are an insurance entity extraction system.
+Analyze the provided transcript segment (which may contain multiple sentences in any language or mix of languages) and extract the following if present. Your output must be in English:
+- "policy_id": formatted strictly as CAR-XXXXXX, LIFE-XXXXXX, or MED-XXXXXX. 
+  * CRITICAL: The policy number might be split across multiple sentences (e.g., "My policy is Life.", "Two zero zero zero zero one"). You MUST stitch them together into "LIFE-200001".
+  * CRITICAL: If the user speaks the numbers as words in any language (e.g., Hindi "do lakh ek", "ek do teen", Spanish "uno dos tres"), you MUST translate them to English digits (123).
+- "name": full or partial name of the caller.
+- "phone": phone number referenced. You MUST translate any spoken numbers into English digits and stitch them if split across sentences.
+Return null for fields not found."""
+
+    response = await client.beta.chat.completions.parse(
+        model=FAST_MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": transcript},
+        ],
+        temperature=0.0,
+        max_tokens=150,
+        response_format=EntityExtraction,
     )
 
     return response.choices[0].message.parsed.model_dump()
@@ -91,34 +140,55 @@ Be generous in extraction — if someone says "at City General Hospital", that I
 Do NOT leave a field null if the information was mentioned even casually or indirectly.
 
 CRITICAL — Data Quality & Normalization:
-- The transcript comes from speech-to-text and may contain spelling errors, phonetic misspellings, or garbled text.
+- The transcript comes from speech-to-text and may contain spelling errors, phonetic misspellings, garbled text, or a mix of multiple languages.
+- You must understand the context regardless of the language and write your extracted facts strictly in English.
 - You MUST normalize and clean all extracted values:
-  * Fix obvious spelling mistakes (e.g., "Feburary" -> "February", "hosptial" -> "Hospital")
+  * Fix obvious spelling mistakes (e.g., "Feburary" → "February", "hosptial" → "Hospital")
   * Capitalize proper nouns correctly (names, cities, hospitals, roads, etc.)
-  * Standardize location names (e.g., "mg road" -> "MG Road", "city general" -> "City General Hospital")
-  * Clean up caller names (e.g., "my name is priya" -> caller_name: "Priya", "i'm ravi kumar" -> "Ravi Kumar")
-  * For incident descriptions, write a clean, concise summary in proper English, not verbatim speech-to-text.
-  * For police report numbers, extract the exact alphanumeric code and format it cleanly (e.g., "F I R 2026 M H 4521" -> "FIR-2026-MH-4521")
+  * Standardize location names (e.g., "mg road" → "MG Road", "city general" → "City General Hospital")
+  * Clean up caller names (e.g., "my name is priya" → caller_name: "Priya", "i'm ravi kumar" → "Ravi Kumar")
+  * For incident descriptions, write a clean, concise summary in proper English, not verbatim speech-to-text. E.g., "yeah so like this guy he just backed into my car in the parking" → "Another vehicle backed into the caller's car in a parking lot."
+  * For injuries, write clearly: "yeah my neck hurts a bit" → "Minor neck pain reported"
+  * For police report numbers, extract the exact alphanumeric code and format it cleanly (e.g., "F I R 2026 M H 4521" → "FIR-2026-MH-4521")
 - Output all values as clean, professional text suitable for an official insurance form.
 
 CRITICAL — date_of_incident and time_of_incident rules:
 - The current date and time is: {current_datetime_str}
 - If the caller uses RELATIVE time references like "happened an hour ago", "just happened", "yesterday", "two days ago", "last night", "this morning", etc., you MUST extrapolate the actual date and time based on the current date/time above.
 - For example, if it is currently 2026-02-26 10:30 and the caller says "it happened about one hour ago", set date_of_incident to "2026-02-26" and time_of_incident to "approximately 09:30".
+- If they say "yesterday afternoon", set date_of_incident to the previous date and time_of_incident to "afternoon".
+- Always output date_of_incident in YYYY-MM-DD format when you can extrapolate it.
+- Always output time_of_incident as a specific time (HH:MM) or descriptive ("morning", "evening") when you can.
 
 CRITICAL — caller_name rules:
 - The caller_name is the CUSTOMER's own name — the person calling in.
 - When the customer says "Hi George" or "Hello Josh", they are ADDRESSING THE AGENT by the agent's name. This is NOT the caller's name. Do NOT extract the agent's name as the caller_name.
+- Only extract caller_name if the customer explicitly introduces themselves, e.g. "My name is Sarah" or "This is Ravi calling".
+- If the customer has not stated their own name, return null for caller_name.
 
 CRITICAL — policy_number rules:
-- Extract the policy number ONLY if the customer explicitly states it (e.g. "my policy number is NS-88402911").
-- Format it in standard form: uppercase prefix, hyphen, digits (e.g., "ns 88402911" -> "NS-88402911").
+- Extract the policy number ONLY if the customer explicitly states it (e.g. "my policy number is CAR-12345").
+- Format it in standard form: uppercase prefix, hyphen, digits (e.g., "car 12345" → "CAR-12345", "life 200001" → "LIFE-200001", "med 300001" → "MED-300001").
+- Return null if no policy number has been mentioned.
 
 CRITICAL — police_report_filed and police_report_number rules:
 - If the caller explicitly says they DID file a police report, set police_report_filed to true.
 - If the caller explicitly says they did NOT file a police report ("no", "not yet", "haven't filed one"), set police_report_filed to false.
 - If police reporting was never discussed, set police_report_filed to null.
-- If they say a police report was filed but did NOT provide the number, set police_report_filed to true and police_report_number to null."""
+- If the caller mentions a police report number, FIR number, or complaint number, extract it.
+- e.g. "the police report number is FIR-2026-4521" → police_report_number = "FIR-2026-4521"
+- If they say a police report was filed but did NOT provide the number, set police_report_filed to true and police_report_number to null.
+- Return null for police_report_number if no number was mentioned.
+
+CRITICAL — Medical claim fields:
+- hospital_name: Name of the hospital where the policyholder is admitted or being treated. Extract from context (e.g. "I'm at Mount Sinai" → "Mount Sinai Hospital").
+- admission_date: When the person was admitted. Use YYYY-MM-DD format. Extrapolate from relative references using current date/time.
+- discharge_date: When discharged, if mentioned. Use YYYY-MM-DD format. Null if still admitted or not mentioned.
+- diagnosis: The medical condition, disease, or reason for hospitalization (e.g. "appendicitis", "kidney stones", "heart attack").
+- treating_doctor: Name of the doctor, if mentioned.
+- cashless_or_reimbursement: If the caller mentions in-network/out-of-network or direct billing/reimbursement preference. One of: "in-network", "out-of-network", or null if not discussed.
+- pre_authorization_number: Pre-authorization or approval reference number if provided by the caller or hospital.
+- Return null for all medical fields if this is not a medical claim."""
 
     response = await client.beta.chat.completions.parse(
         model=FAST_MODEL,

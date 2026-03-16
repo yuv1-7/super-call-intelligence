@@ -1,7 +1,7 @@
 /**
  * FNOL Form Card — Pre-filled First Notice of Loss form
  * Shows after call ends alongside the evaluation scorecard.
- * Renders claim-type-specific fields (car vs life) from accumulated call data.
+ * Renders claim-type-specific fields (car vs life vs medical) from accumulated call data.
  */
 import { useRef } from 'react';
 
@@ -12,15 +12,18 @@ export default function FNOLFormCard({ fnolData }) {
 
     const { facts = {}, member, intent } = fnolData;
 
-    const isCarClaim = intent?.startsWith('car_') || member?.policyId?.startsWith('CAR');
-    const isLifeClaim = intent?.startsWith('life_') || member?.policyId?.startsWith('LIFE');
+    const isCarClaim = intent?.startsWith('car_') || member?.policy_number?.startsWith('CAR');
+    const isLifeClaim = intent?.startsWith('life_') || member?.policy_number?.startsWith('LIFE');
+    const isMedicalClaim = intent?.startsWith('medical_') || member?.policy_number?.startsWith('MED');
 
     // Generate a mock claim reference number
     const claimRef = isCarClaim
         ? `CLM-A-${Date.now().toString().slice(-6)}`
-        : `CLM-L-${Date.now().toString().slice(-6)}`;
+        : isMedicalClaim
+            ? `CLM-M-${Date.now().toString().slice(-6)}`
+            : `CLM-L-${Date.now().toString().slice(-6)}`;
 
-    const today = new Date().toLocaleDateString('en-IN', {
+    const today = new Date().toLocaleDateString('en-US', {
         year: 'numeric', month: 'long', day: 'numeric',
     });
 
@@ -35,7 +38,7 @@ export default function FNOLFormCard({ fnolData }) {
 
         const opt = {
             margin: [0.4, 0.5, 0.4, 0.5],
-            filename: `FNOL_${member?.policyId || 'Unknown'}_${claimRef}.pdf`,
+            filename: `FNOL_${member?.policy_number || 'Unknown'}_${claimRef}.pdf`,
             image: { type: 'jpeg', quality: 0.98 },
             html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
             jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
@@ -48,7 +51,7 @@ export default function FNOLFormCard({ fnolData }) {
         element.classList.remove('export-mode');
     };
 
-    const formatCurrency = (val) => val != null ? `₹${val.toLocaleString('en-IN')}` : '—';
+    const formatCurrency = (val) => val != null ? `$${val.toLocaleString('en-US')}` : '—';
 
     // Render a single form field row
     const Field = ({ label, value, fullWidth }) => (
@@ -84,7 +87,9 @@ export default function FNOLFormCard({ fnolData }) {
                     <div className="fnol-header-left">
                         <h2 className="fnol-title">First Notice of Loss</h2>
                         <p className="fnol-subtitle">
-                            {isCarClaim ? 'Automobile Insurance Claim Report' : 'Life Insurance Death Claim Report'}
+                            {isCarClaim ? 'Automobile Insurance Claim Report' 
+                                : isMedicalClaim ? 'Medical Insurance Claim Report'
+                                : 'Life Insurance Death Claim Report'}
                         </p>
                     </div>
                     <div className="fnol-header-right">
@@ -96,8 +101,8 @@ export default function FNOLFormCard({ fnolData }) {
                             <span className="fnol-meta-label">Report Date</span>
                             <span className="fnol-meta-value">{today}</span>
                         </div>
-                        <span className={`fnol-type-badge ${isCarClaim ? 'car' : 'life'}`}>
-                            {isCarClaim ? '🚗 Auto' : '🛡️ Life'}
+                        <span className={`fnol-type-badge ${isCarClaim ? 'car' : isMedicalClaim ? 'medical' : 'life'}`}>
+                            {isCarClaim ? '🚗 Auto' : isMedicalClaim ? '🏥 Medical' : '🛡️ Life'}
                         </span>
                     </div>
                 </div>
@@ -110,7 +115,7 @@ export default function FNOLFormCard({ fnolData }) {
                     </h3>
                     <div className="fnol-grid">
                         <Field label="Full Name" value={member?.name} />
-                        <Field label="Policy Number" value={member?.policyId || facts.policy_number} />
+                        <Field label="Policy Number" value={member?.policy_number || facts.policy_number} />
                         <Field label="Phone" value={member?.phone} />
                         <Field label="Email" value={member?.email} />
                         <Field label="Policy Type" value={member?.policyType} />
@@ -142,7 +147,7 @@ export default function FNOLFormCard({ fnolData }) {
                 <div className="fnol-section">
                     <h3 className="fnol-section-title">
                         <span className="fnol-section-num">03</span>
-                        {isLifeClaim ? 'Death Claim Details' : 'Incident / Loss Details'}
+                        {isLifeClaim ? 'Death Claim Details' : isMedicalClaim ? 'Hospitalization / Treatment Details' : 'Incident / Loss Details'}
                     </h3>
                     <div className="fnol-grid">
                         <Field label={isLifeClaim ? 'Date of Death' : 'Date of Incident'} value={facts.date_of_incident} />
@@ -154,6 +159,25 @@ export default function FNOLFormCard({ fnolData }) {
                         )}
                     </div>
                 </div>
+
+                {/* ─── Section 4 (Medical): Hospitalization Details ─── */}
+                {isMedicalClaim && (
+                    <div className="fnol-section">
+                        <h3 className="fnol-section-title">
+                            <span className="fnol-section-num">04</span>
+                            Hospitalization & Treatment
+                        </h3>
+                        <div className="fnol-grid">
+                            <Field label="Hospital Name" value={facts.hospital_name} />
+                            <Field label="Admission Date" value={facts.admission_date} />
+                            <Field label="Diagnosis" value={facts.diagnosis} />
+                            <Field label="Treating Doctor" value={facts.treating_doctor} />
+                            <Field label="Network Type" value={facts.cashless_or_reimbursement} />
+                            <Field label="Pre-Authorization #" value={facts.pre_authorization_number} />
+                            <Field label="Discharge Date" value={facts.discharge_date} />
+                        </div>
+                    </div>
+                )}
 
                 {/* ─── Section 4 (Car): Vehicle & Accident Details ─── */}
                 {isCarClaim && (
@@ -234,7 +258,7 @@ export default function FNOLFormCard({ fnolData }) {
                 {/* ─── Footer ─── */}
                 <div className="fnol-footer">
                     <div className="fnol-footer-left">
-                        <p>This form was auto-generated by Super Call Intelligence based on details captured during the FNOL call.</p>
+                        <p>This form was auto-generated by CallIQ based on details captured during the FNOL call.</p>
                         <p>All information is subject to verification. A claims adjuster will review this report.</p>
                     </div>
                     <div className="fnol-footer-right">

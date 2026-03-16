@@ -1,16 +1,10 @@
-# data/knowledge.py — Knowledge & Compliance search via Azure AI Search (Vector DB)
+# data/knowledge.py — Knowledge & Compliance search via Azure AI Search
+# All knowledge content lives in `docs for embedding/` and is indexed in Azure AI Search.
+# This module handles vector + full-text hybrid search against that index.
 
 import os
-import re
 import logging
 from typing import Optional
-
-from azure.core.credentials import AzureKeyCredential
-from azure.search.documents import SearchClient
-from azure.search.documents.models import VectorizedQuery
-from sentence_transformers import SentenceTransformer
-import torch
-import torch.nn.functional as F
 
 logger = logging.getLogger("call-intelligence")
 
@@ -22,32 +16,44 @@ INDEX_NAME = "knowledge-base-index"
 EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
 TARGET_DIMENSION = 1536
 
-# ─── Module-level singletons (initialized lazily) ─── #
-_search_client: SearchClient | None = None
-_embedding_model: SentenceTransformer | None = None
+# ─── Module-level singletons ─── #
+_search_client = None
+_embedding_model = None
 
+
+def _azure_available() -> bool:
+    """Check if Azure Search credentials are configured."""
+    return bool(AZURE_SEARCH_ENDPOINT and AZURE_SEARCH_KEY)
+
+
+# ══════════════════════════════════════════════════════
+# AZURE AI SEARCH — primary (and only) search backend
+# ══════════════════════════════════════════════════════
 
 def _get_device() -> str:
+    import torch
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
-def _get_embedding_model() -> SentenceTransformer:
-    """Lazy-load the embedding model once at first use."""
+def _get_embedding_model():
     global _embedding_model
     if _embedding_model is None:
+        from sentence_transformers import SentenceTransformer
         logger.info(f"Loading embedding model: {EMBEDDING_MODEL_NAME}...")
         _embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
         logger.info(f"Embedding model loaded on {_get_device()}")
     return _embedding_model
 
 
-def _get_search_client() -> SearchClient:
-    """Lazy-load the Azure Search client once at first use."""
+def _get_search_client():
     global _search_client
     if _search_client is None:
-        if not AZURE_SEARCH_ENDPOINT or not AZURE_SEARCH_KEY:
+        from azure.core.credentials import AzureKeyCredential
+        from azure.search.documents import SearchClient
+        if not _azure_available():
             raise RuntimeError(
-                "AZURE_SEARCH_ENDPOINT and AZURE_SEARCH_KEY must be set in environment variables."
+                "AZURE_SEARCH_ENDPOINT and AZURE_SEARCH_KEY must be set in environment variables. "
+                "All knowledge content is served via Azure AI Search — see 'docs for embedding/' for source documents."
             )
         credential = AzureKeyCredential(AZURE_SEARCH_KEY)
         _search_client = SearchClient(
@@ -60,16 +66,28 @@ def _get_search_client() -> SearchClient:
 
 
 def warmup():
-    """Pre-load embedding model and search client at server startup.
-    Call this from the FastAPI lifespan handler to avoid first-request latency."""
+    """Pre-load resources at server startup."""
     logger.info("🔥 Warming up knowledge module...")
-    _get_embedding_model()
-    _get_search_client()
-    logger.info("✅ Knowledge module ready (model + search client loaded)")
+    if _azure_available():
+        try:
+            _get_embedding_model()
+            _get_search_client()
+            logger.info("✅ Knowledge module ready (Azure Search + embedding model)")
+        except Exception as e:
+            logger.warning(f"⚠️ Azure Search warmup failed: {e}")
+    else:
+        logger.warning(
+            "⚠️ Azure Search not configured (AZURE_SEARCH_ENDPOINT / AZURE_SEARCH_KEY not set). "
+            "Knowledge and compliance search will not be available."
+        )
+    logger.info("✅ Knowledge module warmup complete")
 
 
 def _embed_query(text: str) -> list[float]:
     """Embed a single query string using the local BGE model, padded to TARGET_DIMENSION."""
+    import torch
+    import torch.nn.functional as F
+
     model = _get_embedding_model()
     embedding = model.encode([text], convert_to_tensor=True, device=_get_device())
 
@@ -86,94 +104,115 @@ def _embed_query(text: str) -> list[float]:
     return embedding[0].cpu().numpy().tolist()
 
 
+# ══════════════════════════════════════════════════════
+# PUBLIC API
+# ══════════════════════════════════════════════════════
+
 def search_knowledge(
     query: str, category: str | None = None, top_k: int = 3
 ) -> list[dict]:
     """
-    Hybrid search over Azure AI Search — combines vector similarity with full-text BM25.
-    Optionally filters by category (e.g. 'claims', 'compliance', 'policy').
-    Returns top_k results as dicts with: title, content, category, section_heading, document_id.
+    Hybrid search — combines vector similarity with full-text BM25 on Azure AI Search.
+    All knowledge documents are indexed from the `docs for embedding/` directory.
     """
-    client = _get_search_client()
-    query_vector = _embed_query(query)
+    if not _azure_available():
+        logger.warning("Azure Search not configured — returning empty results")
+        return []
 
-    vector_query = VectorizedQuery(
-        vector=query_vector,
-        k_nearest_neighbors=top_k,
-        fields="content_vector",
-    )
+    try:
+        from azure.search.documents.models import VectorizedQuery
 
-    # Build OData filter for category if provided
-    filter_expr = None
-    if category:
-        # Map claim_type values to index category values
-        category_map = {
-            "car_insurance": "claims",
-            "life_insurance": "claims",
-            "general": "general",
-        }
-        mapped = category_map.get(category, category)
-        # Include 'general' docs alongside category-specific ones
-        filter_expr = f"category eq '{mapped}' or category eq 'general'"
+        client = _get_search_client()
+        query_vector = _embed_query(query)
 
-    results = client.search(
-        search_text=query,
-        vector_queries=[vector_query],
-        filter=filter_expr,
-        top=top_k,
-        select=["title", "content", "category", "section_heading", "document_id"],
-    )
+        vector_query = VectorizedQuery(
+            vector=query_vector,
+            k_nearest_neighbors=top_k,
+            fields="content_vector",
+        )
 
-    docs = []
-    for result in results:
-        docs.append({
-            "title": result.get("title", ""),
-            "content": result.get("content", ""),
-            "category": result.get("category", ""),
-            "section_heading": result.get("section_heading", ""),
-            "document_id": result.get("document_id", ""),
-            "score": result.get("@search.score", 0),
-        })
+        # Build OData filter for category if provided
+        filter_expr = None
+        if category:
+            category_map = {
+                "car_insurance": "claims",
+                "life_insurance": "claims",
+                "medical_insurance": "claims",
+                "general": "general",
+            }
+            mapped = category_map.get(category, category)
+            filter_expr = f"category eq '{mapped}' or category eq 'general'"
 
-    logger.info(f"Knowledge search for '{query[:50]}...' returned {len(docs)} results")
-    return docs
+        results = client.search(
+            search_text=query,
+            vector_queries=[vector_query],
+            filter=filter_expr,
+            top=top_k,
+            select=["title", "content", "category", "section_heading", "document_id"],
+        )
+
+        docs = []
+        for result in results:
+            docs.append({
+                "title": result.get("title", ""),
+                "content": result.get("content", ""),
+                "category": result.get("category", ""),
+                "section_heading": result.get("section_heading", ""),
+                "document_id": result.get("document_id", ""),
+                "score": result.get("@search.score", 0),
+            })
+
+        logger.info(f"Knowledge search for '{query[:50]}...' returned {len(docs)} results")
+        return docs
+
+    except Exception as e:
+        logger.error(f"Azure Search failed: {e}")
+        return []
 
 
 def get_compliance_alerts(intent: str, transcript: str) -> list[dict]:
     """
-    Search for compliance rules and alerts relevant to the current call.
-    Queries the Azure index filtered to the 'compliance' category.
-    Returns matched compliance documents as alerts.
+    Search for compliance rules relevant to the current call.
+    Uses Azure AI Search filtered to 'compliance' category.
     """
-    client = _get_search_client()
+    if not _azure_available():
+        logger.warning("Azure Search not configured — returning empty compliance alerts")
+        return []
 
-    # Build a targeted compliance query from intent + key transcript phrases
-    search_query = f"{intent} compliance guidelines regulations"
-    query_vector = _embed_query(search_query)
+    try:
+        from azure.search.documents.models import VectorizedQuery
 
-    vector_query = VectorizedQuery(
-        vector=query_vector,
-        k_nearest_neighbors=5,
-        fields="content_vector",
-    )
+        client = _get_search_client()
+        search_query = f"{intent} compliance guidelines regulations"
+        query_vector = _embed_query(search_query)
 
-    results = client.search(
-        search_text=search_query,
-        vector_queries=[vector_query],
-        filter="category eq 'compliance'",
-        top=5,
-        select=["title", "content", "section_heading", "document_id"],
-    )
+        vector_query = VectorizedQuery(
+            vector=query_vector,
+            k_nearest_neighbors=5,
+            fields="content_vector",
+        )
 
-    alerts = []
-    for result in results:
-        alerts.append({
-            "title": result.get("title", ""),
-            "content": result.get("content", ""),
-            "section_heading": result.get("section_heading", ""),
-            "severity": "HIGH",  # Default severity; can be refined with metadata later
-            "document_id": result.get("document_id", ""),
-        })
+        results = client.search(
+            search_text=search_query,
+            vector_queries=[vector_query],
+            filter="category eq 'compliance'",
+            top=5,
+            select=["title", "content", "section_heading", "document_id"],
+        )
 
-    logger.info(f"Compliance check for '{intent}' returned {len(alerts)} alerts")
-    return alerts
+        alerts = []
+        for result in results:
+            alerts.append({
+                "title": result.get("title", ""),
+                "content": result.get("content", ""),
+                "section_heading": result.get("section_heading", ""),
+                "severity": "HIGH",
+                "document_id": result.get("document_id", ""),
+            })
+
+        logger.info(f"Compliance check for '{intent}' returned {len(alerts)} alerts")
+        return alerts
+
+    except Exception as e:
+        logger.error(f"Azure compliance search failed: {e}")
+        return []

@@ -1,45 +1,39 @@
 import { useState, useRef, useCallback } from 'react';
-import * as SpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
 
 /**
- * Custom hook for Azure Speech SDK with real-time transcription
- * and speaker diarization (ConversationTranscriber).
- *
- * Uses a short-lived token fetched from the backend (/api/speech-token)
- * so the API key never touches the browser.
+ * Custom hook for Deepgram real-time transcription with channel-based diarization.
+ * 
+ * Uses TWO separate audio channels for deterministic speaker identification:
+ *   - Channel 0 (left)  = Microphone → Agent
+ *   - Channel 1 (right) = System audio → Customer
+ * 
+ * KEY FIX: echoCancellation: true on the mic stream prevents the caller's audio
+ * (playing through laptop speakers) from bleeding back into the agent's mic channel.
  */
-export function useAzureSpeech({ onTranscript }) {
+export function useDeepgramSpeech({ onTranscript }) {
     const [isListening, setIsListening] = useState(false);
     const [error, setError] = useState(null);
-    const transcriberRef = useRef(null);
+    const sessionRef = useRef(null);
 
     const fetchToken = async () => {
         const baseUrl = import.meta.env.DEV
             ? `http://${window.location.hostname}:8000`
             : '';
-        const res = await fetch(`${baseUrl}/api/speech-token`);
+        const res = await fetch(`${baseUrl}/api/deepgram-token`);
         const data = await res.json();
         if (data.error) throw new Error(data.error);
-        return data; // { token, region }
+        return data.token;
     };
 
     const startListening = useCallback(async () => {
         try {
             setError(null);
-            const { token, region } = await fetchToken();
 
-            const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
-            speechConfig.speechRecognitionLanguage = 'en-US';
+            const token = await fetchToken();
 
-            // Reduce silence timeout to 1000ms for faster token finalization while preserving speaker diarization
-            speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "700");
-            speechConfig.setProperty(SpeechSDK.PropertyId.Speech_SegmentationSilenceTimeoutMs, "700");
-
-            // Capture system audio via screen share
             let displayStream;
             let micStream;
             let audioContext;
-            let transcriber;
 
             try {
                 displayStream = await navigator.mediaDevices.getDisplayMedia({
@@ -53,29 +47,134 @@ export function useAzureSpeech({ onTranscript }) {
 
                 if (displayStream.getAudioTracks().length === 0) {
                     displayStream.getTracks().forEach((track) => track.stop());
-                    throw new Error("Firefox doesn't support sharing system audio from the 'Entire Screen' option natively. Please use Chrome/Edge for this demo, or use a Virtual Audio Cable in Firefox.");
+                    throw new Error(
+                        "Your browser doesn't support sharing system audio from this source. " +
+                        "Please use Chrome/Edge and select a tab or window with audio."
+                    );
                 }
 
-                // Capture user's microphone
+                // FIX: echoCancellation removes the caller's voice that's playing through
+                // your laptop speakers from leaking back into your microphone (Agent channel).
                 micStream = await navigator.mediaDevices.getUserMedia({
-                    audio: true,
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                    },
                     video: false
                 });
 
-                // Mix the two audio streams using Web Audio API
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const displaySource = audioContext.createMediaStreamSource(displayStream);
+                audioContext = new AudioContext();
                 const micSource = audioContext.createMediaStreamSource(micStream);
-                const destination = audioContext.createMediaStreamDestination();
+                const displaySource = audioContext.createMediaStreamSource(displayStream);
 
-                displaySource.connect(destination);
-                micSource.connect(destination);
+                const merger = audioContext.createChannelMerger(2);
+                micSource.connect(merger, 0, 0);      // mic → channel 0 (Agent)
+                displaySource.connect(merger, 0, 1);   // system → channel 1 (Customer)
 
-                // Use the mixed stream for transcription
-                const mixedStream = destination.stream;
+                await audioContext.audioWorklet.addModule('/pcm-processor.js');
+                const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor', {
+                    channelCount: 2,
+                    channelCountMode: 'explicit',
+                    channelInterpretation: 'discrete',
+                });
 
-                const audioConfig = SpeechSDK.AudioConfig.fromStreamInput(mixedStream);
-                transcriber = new SpeechSDK.ConversationTranscriber(speechConfig, audioConfig);
+                merger.connect(workletNode);
+
+                const dgParams = new URLSearchParams({
+                    model: 'nova-3',
+                    language: 'multi',
+                    multichannel: 'true',
+                    channels: '2',
+                    smart_format: 'true',
+                    interim_results: 'true',
+                    endpointing: '1600',
+                    encoding: 'linear16',
+                    sample_rate: '16000',
+                });
+
+                const dgUrl = `wss://api.deepgram.com/v1/listen?${dgParams.toString()}`;
+                const dgSocket = new WebSocket(dgUrl, ['token', token]);
+
+                sessionRef.current = {
+                    dgSocket,
+                    displayStream,
+                    micStream,
+                    audioContext,
+                    workletNode,
+                };
+
+                dgSocket.onopen = () => {
+                    console.log('🎙️ Deepgram: WebSocket connected (multichannel: ch0=Agent, ch1=Customer)');
+                    setIsListening(true);
+
+                    workletNode.port.onmessage = (event) => {
+                        if (dgSocket.readyState === WebSocket.OPEN) {
+                            dgSocket.send(event.data);
+                        }
+                    };
+                };
+
+                dgSocket.onmessage = (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+
+                        if (msg.type === 'Results') {
+                            const alt = msg.channel?.alternatives?.[0];
+                            if (!alt || !alt.transcript) return;
+
+                            const text = alt.transcript;
+                            const isFinal = msg.is_final === true;
+                            const start = msg.start || 0;
+
+                            const channelIdx = msg.channel_index?.[0] ?? 0;
+                            const speaker = String(channelIdx);
+
+                            // Extract detected languages if available
+                            let detectedLanguages = alt.languages || msg.channel?.languages || [];
+                            if (!detectedLanguages.length && alt.words) {
+                                const langs = alt.words.map(w => w.language).filter(Boolean);
+                                detectedLanguages = [...new Set(langs)];
+                            }
+
+                            const stableOffset = Math.round(start * 100) / 100;
+
+                            console.log(
+                                `${isFinal ? '📝 FINAL' : '💬 Partial'} ` +
+                                `[Ch${channelIdx} → ${channelIdx === 0 ? 'Agent' : 'Customer'}]: ` +
+                                `${text.slice(0, 60)}` + 
+                                (detectedLanguages.length > 0 ? ` [Langs: ${detectedLanguages.join(',')}]` : '')
+                            );
+
+                            onTranscript?.({
+                                text,
+                                speaker,
+                                isFinal,
+                                offset: stableOffset,
+                                languages: detectedLanguages,
+                            });
+                        }
+                    } catch (err) {
+                        console.error('Deepgram message parse error:', err);
+                    }
+                };
+
+                dgSocket.onerror = (event) => {
+                    console.error('Deepgram WebSocket error:', event);
+                    setError('Deepgram connection error. Check your API key and network.');
+                };
+
+                dgSocket.onclose = (event) => {
+                    console.log(`🎙️ Deepgram: WebSocket closed (code=${event.code}, reason=${event.reason})`);
+                    if (event.code !== 1000 && event.code !== 1005) {
+                        setError(`Deepgram disconnected unexpectedly (code: ${event.code})`);
+                    }
+                    setIsListening(false);
+                };
+
+                displayStream.getVideoTracks()[0]?.addEventListener('ended', () => {
+                    stopListening();
+                });
 
             } catch (err) {
                 if (displayStream) displayStream.getTracks().forEach((track) => track.stop());
@@ -83,99 +182,35 @@ export function useAzureSpeech({ onTranscript }) {
                 if (audioContext && audioContext.state !== 'closed') audioContext.close();
 
                 if (err.name === 'NotAllowedError') {
-                    throw new Error("Screen sharing or microphone was denied. " + err.message);
+                    throw new Error('Screen sharing or microphone was denied. ' + err.message);
                 }
                 throw err;
             }
-
-            // Store everything in the ref so we can clean up later
-            transcriberRef.current = {
-                transcriber,
-                displayStream,
-                micStream,
-                audioContext
-            };
-
-            // ─── Interim results (partial) ─── //
-            transcriber.transcribing = (s, e) => {
-                if (e.result.reason === SpeechSDK.ResultReason.RecognizingSpeech) {
-                    onTranscript?.({
-                        text: e.result.text,
-                        speaker: e.result.speakerId || 'Unknown',
-                        isFinal: false,
-                        offset: e.result.offset,
-                        duration: e.result.duration,
-                    });
-                }
-            };
-
-            // ─── Final results ─── //
-            transcriber.transcribed = (s, e) => {
-                if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech && e.result.text) {
-                    onTranscript?.({
-                        text: e.result.text,
-                        speaker: e.result.speakerId || 'Unknown',
-                        isFinal: true,
-                        offset: e.result.offset,
-                        duration: e.result.duration,
-                    });
-                }
-            };
-
-            transcriber.canceled = (s, e) => {
-                if (e.reason === SpeechSDK.CancellationReason.Error) {
-                    console.error('Azure Speech error:', e.errorDetails);
-                    setError(e.errorDetails);
-                }
-                setIsListening(false);
-            };
-
-            transcriber.sessionStopped = () => {
-                setIsListening(false);
-            };
-
-            await new Promise((resolve, reject) => {
-                transcriber.startTranscribingAsync(
-                    () => {
-                        setIsListening(true);
-                        console.log('🎙️ Azure Speech: transcription started with system audio share');
-                        resolve();
-                    },
-                    (err) => {
-                        console.error('Failed to start Azure Speech:', err);
-                        setError(String(err));
-                        reject(err);
-                    }
-                );
-            });
-
-            // Remove the redundant transcriberRef assignment
         } catch (err) {
-            console.error('Azure Speech init error:', err);
+            console.error('Deepgram init error:', err);
             setError(err.message || String(err));
         }
     }, [onTranscript]);
 
     const stopListening = useCallback(() => {
-        if (transcriberRef.current) {
-            const { transcriber, displayStream, micStream, audioContext } = transcriberRef.current;
+        if (sessionRef.current) {
+            const { dgSocket, displayStream, micStream, audioContext, workletNode } = sessionRef.current;
 
-            if (transcriber) {
-                transcriber.stopTranscribingAsync(
-                    () => {
-                        console.log('🎙️ Azure Speech: transcription stopped');
-                        transcriber.close();
-                    },
-                    (err) => console.error('Error stopping transcription:', err)
-                );
+            if (workletNode) {
+                workletNode.port.onmessage = null;
+                workletNode.disconnect();
             }
 
-            // Clean up custom streams and audio context
+            if (dgSocket && dgSocket.readyState === WebSocket.OPEN) {
+                dgSocket.send(new Uint8Array(0));
+                dgSocket.close();
+            }
+
             if (displayStream) displayStream.getTracks().forEach(track => track.stop());
             if (micStream) micStream.getTracks().forEach(track => track.stop());
             if (audioContext && audioContext.state !== 'closed') audioContext.close();
 
-            transcriberRef.current = null;
+            sessionRef.current = null;
         }
         setIsListening(false);
     }, []);

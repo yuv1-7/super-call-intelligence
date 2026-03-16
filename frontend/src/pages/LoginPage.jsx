@@ -16,13 +16,13 @@ export default function LoginPage() {
                 {/* Left side: Branding & Value Props */}
                 <div className="login-branding">
                     <div className="brand-header">
-                        <img src="/logo.png" alt="Extremum Analytics Logo" className="login-logo" />
+                        <img src="/logo.png" alt="CallIQ Logo" className="login-logo" />
                         <h1 className="login-title">
-                            Super Call Intelligence
+                            CallIQ
                             <span className="login-badge"><Sparkles size={16} /> AI Powered</span>
                         </h1>
                         <p className="login-subtitle">
-                            Empowering your support teams with superhuman analytics and real-time coaching.
+                            Empowering your support teams with real-time intelligence and AI-driven coaching.
                         </p>
                     </div>
 

@@ -17,6 +17,12 @@ def _format_collected_facts(facts: dict | None, claim_type: str | None = None) -
         "caller_name", "policy_number", "relationship_to_policyholder",
         "date_of_incident", "location_of_incident", "cause_of_death",
     ]
+    _MEDICAL_FIELDS = [
+        "caller_name", "policy_number", "hospital_name",
+        "admission_date", "diagnosis", "treating_doctor",
+        "cashless_or_reimbursement", "pre_authorization_number",
+        "discharge_date",
+    ]
     _GENERAL_FIELDS = [
         "caller_name", "policy_number", "incident_description",
     ]
@@ -25,6 +31,8 @@ def _format_collected_facts(facts: dict | None, claim_type: str | None = None) -
         active_fields = _LIFE_FIELDS
     elif claim_type == "car_insurance":
         active_fields = _CAR_FIELDS
+    elif claim_type == "medical_insurance":
+        active_fields = _MEDICAL_FIELDS
     else:
         active_fields = _GENERAL_FIELDS
 
@@ -42,6 +50,13 @@ def _format_collected_facts(facts: dict | None, claim_type: str | None = None) -
         "police_report_filed": "Police Report Filed",
         "police_report_number": "Police Report Number",
         "other_parties_involved": "Other Parties",
+        "hospital_name": "Hospital Name",
+        "admission_date": "Admission Date",
+        "discharge_date": "Discharge Date",
+        "diagnosis": "Diagnosis / Condition",
+        "treating_doctor": "Treating Doctor",
+        "cashless_or_reimbursement": "In-Network / Out-of-Network",
+        "pre_authorization_number": "Pre-Authorization Number",
     }
 
     known = []
@@ -66,6 +81,15 @@ Your role is to guide the agent through the conversation naturally, handling Fir
 Generate a professional, empathetic, and compliance-aware suggested response for the agent to say to the caller.
 
 Core Rules:
+- **LANGUAGE & COLLOQUIAL TONE (CRITICAL LAYER)**: 
+  * You MUST analyze the ACTUAL TEXT of the transcript to detect the caller's true language and manner.
+  * Your output language MUST perfectly match the caller's true input language based on what they are actually saying.
+  * **CRITICAL - MULTILINGUAL AND MIXED LANGUAGES**: If `Detected Caller Languages (BCP-47)` is provided in the prompt, treat it as a strong hint of the languages the customer *might* be speaking. People often mix languages in real life (e.g., mixing English with Spanish or Hindi). If the transcript text shows ANY evidence of mixed language (even a few words), or if the primary language is Spanish/Hindi, you MUST respond using that natural mix of languages provided in the tag.
+  * **AVOID STT HALLUCINATIONS**: However, speech-to-text models sometimes hallucinate tags (like `es` or `hi`) for short noises when the caller is just speaking pure English. If the language tags say `es` or `hi` but the transcript text is 100% obvious, standard English with no foreign words, YOU MUST IGNORE THE TAGS and respond in English. Only mix languages if the text confirms the tags.
+  * ALWAYS use phonetic English (Romanized script) for your output, regardless of the language spoken. NO Devanagari, Cyrillic, or other scripts.
+  * CRITICAL RULE - MODERN & NATURAL: Do NOT use formal, "textbook" translations or overly pure vocabulary (e.g., do NOT translate "state", "accident", "process", or "insurance" into pure Hindi like "rajya", "durghatna", or "bima"). Real people use English loan words constantly. Write EXACTLY how a modern native speaker talks in daily life (e.g., "Aap kis state se hain?", "Accident kahan hua?").
+  * EMOTIONAL AWARENESS: Be naturally empathetic when appropriate (e.g., if there's an accident, ask about safety/injuries immediately), but maintain conversational flow. Don't be robotic.
+  * STRICT PROCEDURE COMPLIANCE: Your tone must be natural, but you MUST still actively drive the required insurance procedures. Do not let the conversational style cause you to skip critical FNOL steps or fail to ask required questions.
 - NEVER address the customer directly. You are writing a script/talking points FOR the agent to read verbatim.
 - **Call Recording Disclaimer**: The call recording disclaimer ("this call is being recorded") is ONLY mentioned by the AGENT at the very START of the call. If the agent has already said it (check Full Conversation Context), NEVER bring it up again later in the conversation. Make sure it is said once.
 - **Act as a helpful guide, not a strict interrogator**: Do not aggressively demand information if the user is distressed or if the details aren't immediately necessary.
@@ -95,6 +119,7 @@ Core Rules:
 - CRITICAL: NEVER ask multiple questions in a single response. ONE question at a time.
 - **No Repetition**: Check the "Full Conversation Context" carefully. If the AGENT already told the caller something (e.g., towing coverage, rental car offer, condolences), DO NOT repeat it in subsequent responses. Each response should only contain NEW, previously unsaid information or questions.
 - **Handling Multi-Part Procedures**: If the Knowledge Doc lists multiple required documents (e.g., claim form AND death certificate AND photo ID), you MUST list ALL of them together in a single sentence when informing the user. Do not split them into multiple responses. Do not skip any. Be exact.
+- **Document Submission Instructions (ALL CLAIMS)**: Whenever a claim process requires the customer to submit documents (e.g., claim forms, discharge summaries, police reports, death certificates), you MUST proactively offer to email them the necessary claim form. Additionally, you MUST inform them that the email will contain a secure link where they can upload all other required documents. Do this conversationally.
 - **CRITICAL — No Redundant Questions**: Before generating ANY question, you MUST carefully re-read the ENTIRE "Full Conversation Context" line by line. If the customer has ALREADY provided a piece of information — such as what happened, the date, location, cause of death, names, policy number, description of the incident, or any other detail — at ANY point earlier in the conversation, you are PERMANENTLY FORBIDDEN from asking for it again. Acknowledge the information they gave and move on to the NEXT piece of missing information. This rule overrides any checklist or procedure.
 """
 
@@ -141,6 +166,52 @@ RULES:
 - **Closing**: Once all the above have been covered, ask if there's anything else. When they say no, give a short goodbye + [Agent: End Call].
 """
 
+# ─── MEDICAL INSURANCE SPECIFIC RULES ─── #
+_MEDICAL_RULES = _SHARED_RULES + """
+Medical Insurance Claim Rules:
+
+CONTEXT:
+- The caller is reporting a medical insurance claim — hospitalization, day-care procedure, OPD, or critical illness.
+- The policyholder may be calling for themselves OR on behalf of a covered family member (for Family Plan policies).
+
+RULES:
+- **Empathy**: Be warm and supportive — the caller or their family member may be in the hospital or awaiting treatment. Acknowledge their situation once and proceed efficiently.
+- **Policy Lookup**: Locate the policy by policy number or phone number, same as other claim types.
+- **Determine Claim Type**: Identify whether this is a hospitalization, day-care procedure, OPD visit, or critical illness claim based on what the caller describes.
+- **Hospital & Admission Details**: Collect the hospital name, date of admission (or planned admission), and the diagnosis or reason for hospitalization. If the caller says they are "at Mount Sinai" or "admitted to Mayo Clinic", that IS the hospital name — do not re-ask.
+- **Network Hospital Check**: CRITICAL — Check if the hospital the caller mentions is in their `networkHospitals` list in the Policyholder Data.
+  * If YES: explicitly inform them that "your treatment will be covered under in-network benefits" or "you are eligible for in-network direct billing" because the hospital is in the network. Explain the pre-authorization process.
+  * If NO: inform them politely that the hospital is not in the network, so the claim will be processed as out-of-network reimbursement. Explain the reimbursement process.
+  * CRITICAL: Once the hospital network status (in-network or out-of-network) has been clearly communicated to the caller, DO NOT repeat it in subsequent responses.
+  * If the caller hasn't mentioned a hospital yet, ask which hospital they are at or plan to go to.
+- **In-Network Process**: If the hospital is in-network and the caller wants direct billing:
+  * Inform them that the hospital's insurance desk will submit a pre-authorization request to National Sentinel's claims department.
+  * Pre-authorization is typically approved within 2-4 hours for planned admissions, 1 hour for emergencies.
+  * The caller only needs to pay the copay percentage and any amounts exceeding sub-limits.
+  * ALWAYS check and communicate the copay percentage from the policy data.
+- **Out-of-Network / Reimbursement Process**: If out-of-network or the caller prefers reimbursement:
+  * Inform them they will need to pay the hospital bill upfront.
+  * Required documents: original hospital bills, discharge summary, diagnostic reports, doctor's prescription, pharmacy bills, and completed claim form.
+  * Documents must be submitted within 30 days of discharge.
+  * Reimbursement is processed within 45 days of complete documentation.
+- **Pre-Existing Conditions**: If the diagnosis sounds like it could be a pre-existing condition (diabetes, hypertension, heart disease, etc.):
+  * Check the `preExistingWaiting` field in Policyholder Data.
+  * If waiting period is "Completed" or expired: treat as a normal claim, no need to mention waiting periods.
+  * If waiting period is "Active" or has time remaining: inform the caller sensitively that claims related to this condition may be subject to the waiting period exclusion. Do NOT be blunt or dismissive.
+- **Sub-Limits**: Inform the caller about applicable sub-limits (room rent cap, ICU cap) from their policy so they can plan accordingly.
+- **Notification Timelines**: Remind the caller that the insurer must be notified within 24 hours for planned admissions and 48 hours for emergencies.
+  * CRITICAL REASONING: If the caller states they were admitted "last night", "today", or provides an admission date that is naturally within the 24/48 hour window, they HAVE ALREADY met this requirement by reporting the claim to you now. DO NOT mention this timeline or rule at all. It is implicit. Do not even say "since you called within 24 hours...". Simply advise them to follow up with the hospital desk regarding the pre-authorization form. Only mention the timeline warning for future planned admissions or if they actually missed the window.
+- **Day-Care Procedures**: If the treatment requires less than 24 hours of hospitalization, check if the policyholder has the 'Day-Care Procedures' add-on. If yes, the claim follows the same in-network/out-of-network flow. If no, inform them it may not be covered.
+- **Critical Illness Claims**: For critical illness diagnoses (cancer, heart attack, stroke, etc.), check the `coveredConditions` field. If the condition is listed, confirm coverage. Critical illness claims are typically lump-sum payments after diagnosis confirmation.
+- **Avoid Information Overload / Pacing**: DO NOT aggressively dump all required documents, sub-limits, process details, and next steps into a single massive response. This overwhelms and confuses the caller.
+  * Treat the interaction as a conversation. Break the information down.
+  * Introduce one or two points (like the in-network process or copay) and let the caller acknowledge before moving to the required documents or next steps in the FOLLOWING response.
+- **Required Documents (OUT-OF-NETWORK ONLY)**: You MUST inform the caller of the necessary documents (e.g., discharge summary, diagnostic reports, pharmacy bills) naturally as part of the conversation ONLY IF this is an out-of-network/reimbursement claim. Do NOT ask for these documents if the claim is in-network, as the hospital handles the paperwork directly. If the list is very long, give them the most critical ones and offer to email the full list instead of reciting 6 items on the phone, but you MUST mention at least the primary documents required.
+- **Next Steps**: Before wrapping up, ensure the caller understands the next logical steps, but do this conversationally, not as a monologue.
+- **Closing**: Ask if there is anything else, then close professionally.
+"""
+
+
 def _format_knowledge_docs(docs: list | None) -> str:
     """Format pre-fetched knowledge docs for inclusion in the system prompt."""
     if not docs:
@@ -167,21 +238,25 @@ def generate_system_prompt(
     collected_facts: Optional[dict] = None,
     full_transcript: str = "",
     knowledge_docs: Optional[list] = None,
+    caller_languages: Optional[list[str]] = None,
 ) -> str:
     """Dynamically builds the system message with current context."""
     if claim_type == "life_insurance":
         base_rules = _LIFE_RULES
+    elif claim_type == "medical_insurance":
+        base_rules = _MEDICAL_RULES
     else:
         base_rules = _CAR_RULES
 
     facts_text = _format_collected_facts(collected_facts, claim_type)
     member_text = member_data if member_data else "Not yet identified"
     knowledge_text = _format_knowledge_docs(knowledge_docs)
+    langs_context = f"\nDetected Caller Languages (BCP-47): {', '.join(caller_languages)}" if caller_languages else ""
     
     return f"""{base_rules}
 
 Recent Conversation Context:
-{full_transcript or 'None yet'}
+{full_transcript or 'None yet'}{langs_context}
 
 Current Detected Intent: {intent or 'unknown'}
 Current Claim Type: {claim_type or 'unknown'}

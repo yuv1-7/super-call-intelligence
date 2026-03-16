@@ -142,13 +142,14 @@ export function useWebSocket(url) {
         }
     }, []);
 
-    const sendMessage = useCallback((text, isFinalized = true, speaker = 'Unknown', offset = 0) => {
+    const sendMessage = useCallback((text, isFinalized = true, speaker = 'Unknown', offset = 0, languages = []) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({
                 text,
                 is_finalized: isFinalized,
                 speaker,
                 offset,
+                languages,
             }));
         }
     }, []);

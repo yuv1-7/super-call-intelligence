@@ -5,12 +5,13 @@ import json
 import logging
 import time
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 
 from data.members import get_member
@@ -34,7 +35,7 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Building LangGraph pipeline...")
     graph = build_graph()
     logger.info("✅ LangGraph ready.")
-    logger.info("🔥 Pre-loading knowledge module (embedding model + search client)...")
+    logger.info("🔥 Pre-loading knowledge module...")
     warmup_knowledge()
     logger.info("✅ Server is live.")
     yield
@@ -42,9 +43,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Super/PF Call Intelligence",
-    description="Real-time FNOL call intelligence demo with post-call evaluation",
-    version="1.0.0",
+    title="CallIQ",
+    description="Real-time FNOL call intelligence with post-call evaluation",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -58,7 +59,7 @@ app.add_middleware(
 )
 
 # ─── Regex patterns for the FAST PATH ─── #
-POLICY_REGEX = re.compile(r"\b(NS|CAR|LIFE)[-\s]?(\d{4,})\b", re.IGNORECASE)
+POLICY_REGEX = re.compile(r"\b(NS|CAR|LIFE|MED)[-\s]?(\d{4,})\b", re.IGNORECASE)
 PHONE_REGEX = re.compile(r"(?:\b|\()\d{3}\)?[-\s.]?\d{3}[-\s.]?\d{4}\b")
 
 
@@ -68,44 +69,25 @@ async def health():
     return {"status": "ok", "graph_ready": graph is not None}
 
 
-# ─── Azure Speech Token Endpoint ─── #
-# The frontend fetches a short-lived token from here instead of holding the key
-import os
+# ─── Deepgram Token Endpoint ─── #
 import httpx
 
-@app.get("/api/speech-token")
-async def get_speech_token():
+@app.get("/api/deepgram-token")
+async def get_deepgram_token():
     """
-    Issue a short-lived Azure Speech authorization token.
-    The token is valid for 10 minutes. The frontend uses this token
-    with SpeechConfig.fromAuthorizationToken() so the API key never
-    leaves the server.
+    Return the Deepgram API key for the frontend to connect directly
+    to Deepgram's WebSocket API. The key is stored server-side in .env
+    and never hardcoded in the frontend code.
+    
+    Note: For production, consider using Deepgram's /v1/auth/grant 
+    endpoint to issue short-lived JWTs (requires admin-scoped API key).
     """
-    speech_key = os.getenv("AZURE_SPEECH_KEY", "")
-    speech_region = os.getenv("AZURE_SPEECH_REGION", "eastus")
+    deepgram_key = os.getenv("DEEPGRAM_API_KEY", "")
 
-    if not speech_key:
-        raise HTTPException(status_code=500, detail="AZURE_SPEECH_KEY not configured on the server")
+    if not deepgram_key:
+        return JSONResponse({"error": "DEEPGRAM_API_KEY not configured on the server"}, status_code=500)
 
-    token_url = f"https://{speech_region}.api.cognitive.microsoft.com/sts/v1.0/issueToken"
-
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            token_url,
-            headers={
-                "Ocp-Apim-Subscription-Key": speech_key,
-                "Content-Length": "0",
-            },
-        )
-
-    if response.status_code == 200:
-        return {
-            "token": response.text,
-            "region": speech_region,
-        }
-    else:
-        logger.error(f"Failed to fetch speech token: {response.status_code} {response.text}")
-        raise HTTPException(status_code=500, detail="Failed to fetch speech token")
+    return {"token": deepgram_key}
 
 
 
@@ -120,9 +102,11 @@ async def stream_endpoint(websocket: WebSocket):
     call_start_time = time.time()
     detected_intent = None
     claim_type = None
+    detected_claim_type: str | None = None
     detected_member = None
     accumulated_facts: dict = {}  # Persistent fact state across the entire call
     proactive_kb_sent = False  # Track whether we already sent knowledge docs to frontend
+    last_knowledge_docs: list[dict] = []
 
     try:
         while True:
@@ -147,6 +131,9 @@ async def stream_endpoint(websocket: WebSocket):
                     call_duration=call_duration,
                     detected_intent=detected_intent,
                     member_data=detected_member,
+                    accumulated_facts=accumulated_facts,
+                    claim_type=detected_claim_type,
+                    knowledge_docs=last_knowledge_docs,
                 )
 
                 # Attach FNOL form data for the frontend
@@ -173,8 +160,10 @@ async def stream_endpoint(websocket: WebSocket):
                 call_start_time = time.time()
                 detected_intent = None
                 claim_type = None
+                detected_claim_type = None
                 detected_member = None
                 proactive_kb_sent = False
+                last_knowledge_docs = []
                 accumulated_facts = {}
                 continue
 
@@ -185,16 +174,17 @@ async def stream_endpoint(websocket: WebSocket):
             is_finalized: bool = data.get("is_finalized", False)
             speaker: str = data.get("speaker", "Unknown")
             offset: int = data.get("offset", 0)
+            languages: list = data.get("languages", [])
 
             if not text.strip():
                 continue
 
-            # Map Azure diarization speaker IDs to roles
+            # Map Deepgram diarization speaker IDs to roles
             speaker_label = _map_speaker(speaker)
 
             logger.info(
                 f"{'📝 FINAL' if is_finalized else '💬 Partial'} "
-                f"[{speaker_label}]: {text[:80]}"
+                f"[{speaker_label}]: {text[:80]}" + (f" [Langs: {','.join(languages)}]" if languages else "")
             )
 
             # Store in call transcript (only finalized)
@@ -205,6 +195,7 @@ async def stream_endpoint(websocket: WebSocket):
                     "text": text,
                     "timestamp": timestamp,
                     "offset": offset,
+                    "languages": languages,
                 })
 
             # Always echo the transcript back for display immediately
@@ -224,7 +215,7 @@ async def stream_endpoint(websocket: WebSocket):
             # ═══════════════════════════════════════════
             policy_match = POLICY_REGEX.search(text)
             if policy_match:
-                # Reconstruct standardized ID (e.g. NS-88402911) regardless of spaces
+                # Reconstruct standardized ID (e.g. CAR-100001) regardless of spaces
                 policy_id = f"{policy_match.group(1).upper()}-{policy_match.group(2)}"
                 member = get_member(policy_id=policy_id)
                 if member:
@@ -271,7 +262,6 @@ async def stream_endpoint(websocket: WebSocket):
                 )
 
                 # 1. Run intent, fact extraction, AND knowledge search ALL in parallel
-                # asyncio.to_thread wraps the sync search_knowledge in a threadpool call
                 extracted_data = await asyncio.gather(
                     classify_intent(formatted_transcript),
                     extract_claim_facts(formatted_transcript),
@@ -284,14 +274,32 @@ async def stream_endpoint(websocket: WebSocket):
 
                 detected_intent = intent_res.get("intent")
                 claim_type = intent_res.get("claim_type")
+                if claim_type:
+                    detected_claim_type = claim_type
 
                 # Merge new facts into accumulated state — non-null values always win
                 for key, val in new_facts.items():
                     if val is not None:
                         accumulated_facts[key] = val
 
+                # Try to fetch member from accumulated facts if not already detected
+                if not detected_member and accumulated_facts.get("policy_number"):
+                    policy_id = accumulated_facts["policy_number"]
+                    member = get_member(policy_id=policy_id)
+                    if member:
+                        detected_member = member
+                        logger.info(f"🧠 Slow path: Found member {policy_id} via accumulated facts")
+                        await websocket.send_json({
+                            "type": "member_profile",
+                            "data": member,
+                        })
+
                 logger.info(f"📋 Accumulated facts: {accumulated_facts}")
                 logger.info(f"📚 Pre-fetched {len(knowledge_docs)} knowledge docs in parallel")
+
+                # Track knowledge docs for post-call eval
+                if knowledge_docs:
+                    last_knowledge_docs = knowledge_docs
 
                 # Send intent to frontend
                 if detected_intent:
@@ -312,6 +320,13 @@ async def stream_endpoint(websocket: WebSocket):
                         })
                         logger.info(f"⚡ Sent {len(knowledge_docs)} knowledge docs to frontend for {claim_type}.")
 
+                # Get the most recent languages detected for the customer
+                customer_languages = []
+                for line in reversed(call_transcript):
+                    if line["speaker"] == "Customer" and line.get("languages"):
+                        customer_languages = line["languages"]
+                        break
+
                 # 2. Setup state for ReAct Agent — knowledge_docs injected directly into prompt
                 state = {
                     "transcript": text,
@@ -322,7 +337,8 @@ async def stream_endpoint(websocket: WebSocket):
                     "member_data": detected_member,
                     "accumulated_facts": accumulated_facts,
                     "knowledge_docs": knowledge_docs,  # Pre-fetched, injected into system prompt
-                    "messages": [] # Empty on start, populated by graph iteratively
+                    "caller_languages": customer_languages,  # Detected languages for multilingual support
+                    "messages": []  # Empty on start, populated by graph iteratively
                 }
 
                 # Clear the previous suggestion on the frontend just before starting the new stream
@@ -418,30 +434,45 @@ async def stream_endpoint(websocket: WebSocket):
             pass
 
 
-def _map_speaker(speaker_id: str) -> str:
-    """Map Azure diarization speaker IDs to human-readable labels."""
-    mapping = {
+def _map_speaker(speaker_id) -> str:
+    """Map Deepgram diarization speaker IDs to human-readable labels.
+    
+    Deepgram returns integer speaker IDs (0, 1, 2, ...) in the words array.
+    Speaker 0 is mapped to 'Agent', Speaker 1 to 'Customer'.
+    """
+    # Handle Deepgram numeric IDs
+    if isinstance(speaker_id, int):
+        mapping = {0: "Agent", 1: "Customer"}
+        return mapping.get(speaker_id, f"Speaker {speaker_id}")
+    # Handle string IDs (legacy Azure or frontend-sent)
+    string_mapping = {
         "Guest-1": "Agent",
         "Guest-2": "Customer",
+        "0": "Agent",
+        "1": "Customer",
         "Unknown": "Speaker",
     }
-    return mapping.get(speaker_id, f"Speaker {speaker_id}")
+    return string_mapping.get(str(speaker_id), f"Speaker {speaker_id}")
 
 
-def _format_timestamp(offset_ticks: int) -> str:
-    """Convert Azure Speech offset (in 100-nanosecond ticks) to HH:MM:SS format."""
-    if not offset_ticks:
+def _format_timestamp(seconds_value) -> str:
+    """Convert Deepgram start time (seconds as float) to HH:MM:SS format.
+    
+    Also handles legacy Azure tick format (large integers > 10000) for backward compatibility.
+    """
+    if not seconds_value:
         return "00:00:00"
-    total_seconds = offset_ticks / 10_000_000
+    total_seconds = float(seconds_value)
+    # Legacy Azure tick detection: values > 10000 are likely 100-nanosecond ticks
+    if total_seconds > 10000:
+        total_seconds = total_seconds / 10_000_000
     hours = int(total_seconds // 3600)
     minutes = int((total_seconds % 3600) // 60)
-    seconds = int(total_seconds % 60)
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    secs = int(total_seconds % 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
 # ─── Serve frontend static files (production) ─── #
-import os
-
 frontend_dist = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 if os.path.isdir(frontend_dist):
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
@@ -450,7 +481,6 @@ if os.path.isdir(frontend_dist):
     async def serve_frontend():
         return FileResponse(os.path.join(frontend_dist, "index.html"))
 
-    # ADD THESE TWO ROUTES TO FIX THE 404 ERRORS:
     @app.get("/logo.png")
     async def serve_logo():
         return FileResponse(os.path.join(frontend_dist, "logo.png"))
@@ -458,3 +488,7 @@ if os.path.isdir(frontend_dist):
     @app.get("/favicon.ico")
     async def serve_favicon():
         return FileResponse(os.path.join(frontend_dist, "favicon.ico"))
+
+    @app.get("/pcm-processor.js")
+    async def serve_pcm_processor():
+        return FileResponse(os.path.join(frontend_dist, "pcm-processor.js"))
