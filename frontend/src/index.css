@@ -451,6 +451,11 @@ body {
   color: var(--accent-green);
 }
 
+.member-badge.pending {
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--accent-amber);
+}
+
 .member-badge.car {
   background: rgba(99, 102, 241, 0.12);
   color: var(--accent-blue);
@@ -464,6 +469,78 @@ body {
 .member-badge.medical {
   background: rgba(52, 211, 153, 0.12);
   color: var(--accent-green);
+}
+
+/* Member card — allow more height for expanded fields */
+.card.member .card-body {
+  max-height: 400px;
+}
+
+/* ─── Claim History Section ─── */
+.member-claims {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.member-claims-header {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  letter-spacing: 0.02em;
+}
+
+.member-claims-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.member-claim-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.member-claim-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.member-claim-id {
+  font-size: 0.72rem;
+  font-family: monospace;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.member-claim-type {
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.member-claim-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.member-claim-date {
+  flex-shrink: 0;
+}
+
+.member-claim-amount {
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
 /* ─── Knowledge Card ─── */
