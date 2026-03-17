@@ -8,13 +8,13 @@ import asyncio
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 
-from data.members import get_member
+from data.members import get_member, set_db_available
 from agent.graph import build_graph
 from services.extractor import extract_claim_facts, classify_intent
 from services.evaluator import generate_post_call_evaluation
@@ -28,24 +28,53 @@ logger = logging.getLogger("call-intelligence")
 # ─── Build the LangGraph at startup ─── #
 graph = None
 
+# ─── DB availability flag ─── #
+_db_ready = False
+
+DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global graph
+    global graph, _db_ready
     logger.info("🚀 Building LangGraph pipeline...")
     graph = build_graph()
     logger.info("✅ LangGraph ready.")
     logger.info("🔥 Pre-loading knowledge module...")
     warmup_knowledge()
     logger.info("✅ Server is live.")
+
+    # ─── Initialize PostgreSQL connection pool ─── #
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        try:
+            from db.connection import init_pool
+            await init_pool()
+            _db_ready = True
+            set_db_available(True)
+            logger.info("✅ PostgreSQL connected and ready")
+        except Exception as e:
+            logger.warning(f"⚠️ PostgreSQL init failed — running without DB: {e}")
+            _db_ready = False
+            set_db_available(False)
+    else:
+        logger.warning("⚠️ DATABASE_URL not set — running with in-memory data only")
+        _db_ready = False
+        set_db_available(False)
+
     yield
+
+    # ─── Cleanup ─── #
+    if _db_ready:
+        from db.connection import close_pool
+        await close_pool()
     logger.info("🛑 Server shutting down.")
 
 
 app = FastAPI(
     title="CallIQ",
     description="Real-time FNOL call intelligence with post-call evaluation",
-    version="2.0.0",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
@@ -66,7 +95,7 @@ PHONE_REGEX = re.compile(r"(?:\b|\()\d{3}\)?[-\s.]?\d{3}[-\s.]?\d{4}\b")
 # ─── Health check ─── #
 @app.get("/health")
 async def health():
-    return {"status": "ok", "graph_ready": graph is not None}
+    return {"status": "ok", "graph_ready": graph is not None, "db_ready": _db_ready, "dev_mode": DEV_MODE}
 
 
 # ─── Deepgram Token Endpoint ─── #
@@ -76,19 +105,185 @@ import httpx
 async def get_deepgram_token():
     """
     Return the Deepgram API key for the frontend to connect directly
-    to Deepgram's WebSocket API. The key is stored server-side in .env
-    and never hardcoded in the frontend code.
-    
-    Note: For production, consider using Deepgram's /v1/auth/grant 
-    endpoint to issue short-lived JWTs (requires admin-scoped API key).
+    to Deepgram's WebSocket API.
     """
     deepgram_key = os.getenv("DEEPGRAM_API_KEY", "")
-
     if not deepgram_key:
         return JSONResponse({"error": "DEEPGRAM_API_KEY not configured on the server"}, status_code=500)
-
     return {"token": deepgram_key}
 
+
+# ══════════════════════════════════════════════
+# REST API — User, Calls, Evaluations, Teams
+# ══════════════════════════════════════════════
+
+@app.get("/api/me")
+async def get_me(request: Request):
+    """Get current user profile from Clerk JWT."""
+    from middleware.auth import get_current_user
+    try:
+        user = await get_current_user(request)
+        # If DB is ready, upsert the user record
+        if _db_ready:
+            from db.queries import upsert_user
+            await upsert_user(
+                clerk_user_id=user["clerk_user_id"],
+                name=user["name"],
+                email=user["email"],
+                role=user["role"],
+                team_id=user["team_id"],
+            )
+        return user
+    except Exception as e:
+        logger.error(f"Error in /api/me: {e}")
+        return JSONResponse({"error": str(e)}, status_code=401)
+
+
+@app.get("/api/calls")
+async def get_calls_endpoint(
+    request: Request,
+    limit: int = Query(default=50, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    """Get call history filtered by user role."""
+    if not _db_ready:
+        return JSONResponse({"error": "Database not configured"}, status_code=503)
+
+    from middleware.auth import get_current_user
+    from db.queries import get_calls
+    user = await get_current_user(request)
+    calls = await get_calls(
+        agent_id=user["clerk_user_id"],
+        team_id=user["team_id"],
+        role=user["role"],
+        limit=limit,
+        offset=offset,
+    )
+    return {"calls": calls, "total": len(calls)}
+
+
+@app.get("/api/calls/{call_id}")
+async def get_call_detail(call_id: int, request: Request):
+    """Get a single call with its full evaluation."""
+    if not _db_ready:
+        return JSONResponse({"error": "Database not configured"}, status_code=503)
+
+    from middleware.auth import get_current_user
+    from db.queries import get_call_with_evaluation
+    user = await get_current_user(request)
+    call = await get_call_with_evaluation(
+        call_id=call_id,
+        agent_id=user["clerk_user_id"],
+        team_id=user["team_id"],
+        role=user["role"],
+    )
+    if not call:
+        return JSONResponse({"error": "Call not found or access denied"}, status_code=404)
+    return call
+
+
+@app.get("/api/evaluations/summary")
+async def get_eval_summary(request: Request):
+    """Get aggregate evaluation stats for the current user's scope."""
+    if not _db_ready:
+        return JSONResponse({"error": "Database not configured"}, status_code=503)
+
+    from middleware.auth import get_current_user
+    from db.queries import get_evaluation_summary
+    user = await get_current_user(request)
+    summary = await get_evaluation_summary(
+        agent_id=user["clerk_user_id"],
+        team_id=user["team_id"],
+        role=user["role"],
+    )
+    return summary
+
+
+@app.get("/api/team/members")
+async def get_team_members_endpoint(request: Request):
+    """Get team members (team_lead / manager only)."""
+    if not _db_ready:
+        return JSONResponse({"error": "Database not configured"}, status_code=503)
+
+    from middleware.auth import get_current_user
+    from db.queries import get_team_members, get_all_teams, get_team_performance
+    user = await get_current_user(request)
+
+    if user["role"] == "agent":
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+
+    if user["role"] == "manager":
+        teams = await get_all_teams()
+        performance = await get_team_performance()
+        return {"teams": teams, "agents": performance}
+    else:
+        # Team lead — their team only
+        members = await get_team_members(user["team_id"]) if user["team_id"] else []
+        performance = await get_team_performance(user["team_id"]) if user["team_id"] else []
+        return {"members": members, "agents": performance}
+
+
+@app.get("/api/team/performance")
+async def get_team_performance_endpoint(request: Request, team_id: str = Query(default=None)):
+    """Get per-agent performance stats."""
+    if not _db_ready:
+        return JSONResponse({"error": "Database not configured"}, status_code=503)
+
+    from middleware.auth import get_current_user
+    from db.queries import get_team_performance
+    user = await get_current_user(request)
+
+    if user["role"] == "agent":
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+
+    if user["role"] == "team_lead":
+        team_id = user["team_id"]
+
+    performance = await get_team_performance(team_id)
+    return {"agents": performance}
+
+
+# ══════════════════════════════════════════════
+# DEV ENDPOINTS — Only available when DEV_MODE=true
+# ══════════════════════════════════════════════
+
+@app.post("/api/dev/clear-history")
+async def dev_clear_history():
+    """Clear all call history and evaluations. Dev mode only."""
+    if not DEV_MODE:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    if not _db_ready:
+        return JSONResponse({"error": "Database not configured"}, status_code=503)
+
+    from db.queries import clear_call_history
+    count = await clear_call_history()
+    return {"cleared": count, "message": f"Deleted {count} call records and their evaluations"}
+
+
+@app.post("/api/dev/clear-evaluations")
+async def dev_clear_evaluations():
+    """Clear all evaluations only. Dev mode only."""
+    if not DEV_MODE:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    if not _db_ready:
+        return JSONResponse({"error": "Database not configured"}, status_code=503)
+
+    from db.queries import clear_evaluations
+    count = await clear_evaluations()
+    return {"cleared": count, "message": f"Deleted {count} evaluation records"}
+
+
+@app.get("/api/dev/stats")
+async def dev_stats():
+    """Get DB table counts. Dev mode only."""
+    if not DEV_MODE:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    if not _db_ready:
+        return JSONResponse({"error": "Database not configured"}, status_code=503)
+
+    from db.queries import get_db_stats
+    stats = await get_db_stats()
+    return {"stats": stats, "dev_mode": True}
 
 
 # ─── WebSocket helpers ─── #
@@ -121,6 +316,7 @@ async def stream_endpoint(websocket: WebSocket):
     last_compliance_alerts: list[dict] = []  # Track pre-fetched compliance alerts
     intent_stable_count: int = 0  # Counter for early-exit intent classification
     ws_alive = True  # Track WebSocket connection state
+    agent_clerk_id: str | None = None  # Clerk user ID for the agent on this call
 
     try:
         while True:
@@ -128,6 +324,14 @@ async def stream_endpoint(websocket: WebSocket):
             data = json.loads(raw)
 
             msg_type = data.get("type", "transcript")
+
+            # ═══════════════════════════════════════════
+            # 🔑 AUTH — Set agent identity for call persistence
+            # ═══════════════════════════════════════════
+            if msg_type == "auth":
+                agent_clerk_id = data.get("clerk_user_id")
+                logger.info(f"🔑 Agent authenticated: {agent_clerk_id}")
+                continue
 
             # ═══════════════════════════════════════════
             # 📋 END CALL — Generate post-call evaluation
@@ -162,6 +366,26 @@ async def stream_endpoint(websocket: WebSocket):
                     "data": evaluation,
                 })
                 logger.info("📋 Post-call evaluation sent")
+
+                # ─── Persist call + evaluation to DB (async, non-blocking) ─── #
+                if _db_ready and agent_clerk_id:
+                    try:
+                        from db.queries import save_call, save_evaluation
+                        policy_id = detected_member.get("policyId") if detected_member else None
+                        call_id = await save_call(
+                            agent_id=agent_clerk_id,
+                            policy_id=policy_id,
+                            duration_secs=int(call_duration),
+                            intent=detected_intent,
+                            claim_type=detected_claim_type,
+                            transcript=call_transcript,
+                            accumulated_facts=accumulated_facts,
+                            member_data=detected_member,
+                        )
+                        await save_evaluation(call_id, evaluation)
+                        logger.info(f"💾 Call #{call_id} persisted to database")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to persist call to DB: {e}")
                 
                 continue
 
@@ -236,7 +460,7 @@ async def stream_endpoint(websocket: WebSocket):
             if policy_match:
                 # Reconstruct standardized ID (e.g. CAR-100001) regardless of spaces
                 policy_id = f"{policy_match.group(1).upper()}-{policy_match.group(2)}"
-                member = get_member(policy_id=policy_id)
+                member = await get_member(policy_id=policy_id)
                 if member:
                     detected_member = member
                     await websocket.send_json({
@@ -252,7 +476,7 @@ async def stream_endpoint(websocket: WebSocket):
                 phone_match = PHONE_REGEX.search(text)
                 if phone_match:
                     phone_raw = phone_match.group(0)
-                    member = get_member(phone=phone_raw)
+                    member = await get_member(phone=phone_raw)
                     if member:
                         detected_member = member
                         await websocket.send_json({
@@ -359,7 +583,7 @@ async def stream_endpoint(websocket: WebSocket):
                 # Try to fetch member from accumulated facts if not already detected
                 if not detected_member and accumulated_facts.get("policy_number"):
                     policy_id = accumulated_facts["policy_number"]
-                    member = get_member(policy_id=policy_id)
+                    member = await get_member(policy_id=policy_id)
                     if member:
                         detected_member = member
                         logger.info(f"🧠 Slow path: Found member {policy_id} via accumulated facts")

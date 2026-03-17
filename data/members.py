@@ -1,8 +1,13 @@
-# data/members.py — Mock CRM Database for National Sentinel Insurance
-# Simulates the ClaimSphere Policy Administration System (PAS)
+# data/members.py — Policy Lookup (Database-backed with in-memory fallback)
+# Queries PostgreSQL for member/policy data. Falls back to hardcoded
+# data if DATABASE_URL is not configured (dev/testing convenience).
 
 import re
+import logging
 
+logger = logging.getLogger("call-intelligence")
+
+# ─── In-memory fallback data (used when DB is not configured) ─── #
 MEMBER_DB = {
     # ─── CAR INSURANCE POLICIES ─── #
     "CAR-100001": {
@@ -240,23 +245,48 @@ MEMBER_DB = {
     }
 }
 
+# Track whether DB is available
+_db_available = False
 
-def get_member(policy_id: str = None, name: str = None, phone: str = None):
+
+def set_db_available(available: bool):
+    """Called at startup to indicate if DB is configured."""
+    global _db_available
+    _db_available = available
+
+
+async def get_member(policy_id: str = None, name: str = None, phone: str = None):
     """
     Look up a policyholder by their policy ID or Phone Number.
-    Strips formatting on phones for matching. Name is kept in signature for compatibility but ignored for searching.
+    Uses PostgreSQL when available, falls back to in-memory dict.
     """
-    # 1. Direct ID match
+    if _db_available:
+        try:
+            from db.queries import get_policy, get_policy_by_phone
+            if policy_id:
+                result = await get_policy(policy_id)
+                if result:
+                    return result
+            if phone:
+                result = await get_policy_by_phone(phone)
+                if result:
+                    return result
+            return None
+        except Exception as e:
+            logger.warning(f"DB lookup failed, falling back to in-memory: {e}")
+
+    # Fallback to in-memory
+    return _get_member_sync(policy_id=policy_id, name=name, phone=phone)
+
+
+def _get_member_sync(policy_id: str = None, name: str = None, phone: str = None):
+    """Synchronous in-memory fallback lookup."""
     if policy_id:
         policy_id = policy_id.upper().strip()
         if policy_id in MEMBER_DB:
             return MEMBER_DB[policy_id]
 
-    # Normalize input phone
     search_phone = re.sub(r'\D', '', phone) if phone else None
-
-    # 2. Iterate through all members to find a match for phone
-    # Require at least 10 digits to avoid false positives from partial numbers
     if search_phone and len(search_phone) >= 10:
         for pid, data in MEMBER_DB.items():
             db_phone = re.sub(r'\D', '', data.get("phone", ""))
@@ -267,5 +297,5 @@ def get_member(policy_id: str = None, name: str = None, phone: str = None):
 
 
 def get_all_members() -> list:
-    """Returns a list of all member records for testing/UI purposes."""
+    """Returns a list of all member records (in-memory only, for testing)."""
     return list(MEMBER_DB.values())

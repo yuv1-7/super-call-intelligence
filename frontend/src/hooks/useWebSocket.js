@@ -154,6 +154,12 @@ export function useWebSocket(url) {
         }
     }, []);
 
+    const sendRawMessage = useCallback((data) => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify(data));
+        }
+    }, []);
+
     const endCall = useCallback(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({ type: 'end_call' }));
@@ -196,6 +202,7 @@ export function useWebSocket(url) {
         intent,
         postCallEvaluation,
         sendMessage,
+        sendRawMessage,
         endCall,
         resetState,
     };

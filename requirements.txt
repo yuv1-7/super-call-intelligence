@@ -11,3 +11,4 @@ langchain-core
 azure-search-documents
 sentence-transformers
 torch
+asyncpg
