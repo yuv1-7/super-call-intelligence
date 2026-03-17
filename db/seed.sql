@@ -15,16 +15,11 @@ INSERT INTO teams (id, name) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- ══════════════════════════════════════════════
--- USERS (replace clerk_user_id with real Clerk IDs)
+-- USERS
 -- ══════════════════════════════════════════════
-INSERT INTO users (clerk_user_id, name, email, role, team_id) VALUES
-    ('clerk_agent_001',     'Alice Johnson',    'alice@calliq.com',     'agent',     'team_alpha'),
-    ('clerk_agent_002',     'Bob Martinez',     'bob@calliq.com',       'agent',     'team_alpha'),
-    ('clerk_agent_003',     'Carla Davis',      'carla@calliq.com',     'agent',     'team_beta'),
-    ('clerk_lead_001',      'Derek Wang',       'derek@calliq.com',     'team_lead', 'team_alpha'),
-    ('clerk_lead_002',      'Elena Foster',     'elena@calliq.com',     'team_lead', 'team_beta'),
-    ('clerk_manager_001',   'Frank Reynolds',   'frank@calliq.com',     'manager',    NULL)
-ON CONFLICT (clerk_user_id) DO NOTHING;
+-- Note: You do not need to seed users here. 
+-- When a user logs in via Clerk for the first time, the backend (/api/me) 
+-- will automatically insert/sync their Clerk ID, Role, and Team to the database.
 
 -- ══════════════════════════════════════════════
 -- POLICIES — CAR INSURANCE
