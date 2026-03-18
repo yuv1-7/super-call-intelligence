@@ -69,8 +69,9 @@ async def get_current_user(request: Request) -> dict:
     if not metadata:
         metadata = payload.get("public_metadata", {})
     
-    role = metadata.get("role", "agent")
-    team_id = metadata.get("team_id")
+    # Extract role and team_id (support both root claims and nested metadata)
+    role = payload.get("role") or metadata.get("role", "agent")
+    team_id = payload.get("team_id") or metadata.get("team_id")
     
     # Extract name and email from JWT claims
     name = payload.get("name", payload.get("first_name", "User"))
