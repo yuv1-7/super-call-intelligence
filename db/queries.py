@@ -96,12 +96,13 @@ async def get_policy_by_phone(phone: str) -> dict | None:
         return None
 
     pool = get_pool()
-    # Use a function to strip non-digits on the DB side for comparison
-    rows = await pool.fetch("SELECT * FROM policies")
-    for row in rows:
-        db_phone = re.sub(r'\D', '', row["phone"] or "")
-        if search_phone in db_phone:
-            return _row_to_member_dict(row)
+    # Use postgres regexp_replace to strip non-digits for comparison
+    row = await pool.fetchrow(
+        "SELECT * FROM policies WHERE regexp_replace(phone, '[^0-9]', '', 'g') LIKE $1 LIMIT 1",
+        f"%{search_phone}%"
+    )
+    if row:
+        return _row_to_member_dict(row)
     return None
 
 
