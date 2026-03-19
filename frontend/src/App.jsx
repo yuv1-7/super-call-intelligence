@@ -1,9 +1,10 @@
-// App.jsx — Router shell with role-based navigation
+// App.jsx — Router shell with role-based navigation (redesigned)
 
 import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { SignedIn, SignedOut, useAuth, useUser } from '@clerk/clerk-react';
 import { useApi } from './hooks/useApi.js';
+import { AnimatePresence } from 'framer-motion';
 
 import Sidebar from './components/Sidebar.jsx';
 import LoginPage from './pages/LoginPage.jsx';
@@ -20,17 +21,16 @@ export default function App() {
     const { fetchWithAuth } = useApi();
     const [userRole, setUserRole] = useState('agent');
     const [userName, setUserName] = useState('');
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
     useEffect(() => {
         if (isSignedIn && user) {
-            // Get role from Clerk publicMetadata
             const meta = user.publicMetadata || {};
             setUserRole(meta.role || 'agent');
             setUserName(user.firstName || user.fullName || 'User');
 
-            // Sync user to backend DB
             fetchWithAuth('/api/me').catch(err =>
-                console.warn('User sync failed (backend may not have DB):', err)
+                console.warn('User sync failed:', err)
             );
         }
     }, [isSignedIn, user]);
@@ -41,21 +41,14 @@ export default function App() {
                 <LoginPage />
             </SignedOut>
             <SignedIn>
-                <div className="app-shell">
-                    <Sidebar userRole={userRole} />
-                    <div className="app-main">
-                        {/* Header */}
-                        <header className="app-header compact">
-                            <div className="header-brand">
-                                <h1>
-                                    <span className="brand-title">CallIQ</span>
-                                    <span className="brand-subtitle">Dashboard</span>
-                                </h1>
-                            </div>
-                        </header>
-
-                        {/* Routes */}
-                        <div className="app-content">
+                <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+                    <Sidebar
+                        userRole={userRole}
+                        collapsed={sidebarCollapsed}
+                        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+                    />
+                    <main className="app-main">
+                        <AnimatePresence mode="wait">
                             <Routes>
                                 <Route path="/" element={
                                     <DashboardPage userRole={userRole} userName={userName} />
@@ -73,8 +66,8 @@ export default function App() {
                                 <Route path="/dev" element={<DevPage />} />
                                 <Route path="*" element={<Navigate to="/" replace />} />
                             </Routes>
-                        </div>
-                    </div>
+                        </AnimatePresence>
+                    </main>
                 </div>
             </SignedIn>
         </>

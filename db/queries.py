@@ -498,6 +498,66 @@ async def get_team_performance(team_id: str | None = None) -> list[dict]:
 
 
 # ══════════════════════════════════════════════
+# AGENT DRILL-DOWN QUERIES
+# ══════════════════════════════════════════════
+
+async def get_agent_calls_for_team(clerk_user_id: str, team_id: str | None = None, limit: int = 10) -> dict:
+    """Get a specific agent's calls and summary stats (for team lead / manager drill-down).
+    If team_id is provided, restrict to that team only (for team leads).
+    """
+    pool = get_pool()
+
+    # If team_id is set, verify agent belongs to that team
+    if team_id:
+        agent = await pool.fetchrow(
+            "SELECT clerk_user_id FROM users WHERE clerk_user_id = $1 AND team_id = $2",
+            clerk_user_id, team_id
+        )
+        if not agent:
+            return {"calls": [], "summary": {}}
+
+    # Get recent calls with evaluations
+    rows = await pool.fetch("""
+        SELECT c.id, c.intent, c.start_time, c.end_time,
+               e.overall_score, e.grade
+        FROM calls c
+        LEFT JOIN evaluations e ON e.call_id = c.id
+        WHERE c.clerk_user_id = $1
+        ORDER BY c.start_time DESC NULLS LAST
+        LIMIT $2
+    """, clerk_user_id, limit)
+
+    calls = [{
+        "id": str(r["id"]),
+        "intent": r["intent"],
+        "start_time": r["start_time"].isoformat() if r["start_time"] else None,
+        "end_time": r["end_time"].isoformat() if r["end_time"] else None,
+        "overall_score": r["overall_score"],
+        "grade": r["grade"],
+    } for r in rows]
+
+    # Get summary stats
+    stats = await pool.fetchrow("""
+        SELECT COUNT(*) as total_calls,
+               COALESCE(AVG(e.overall_score), 0) as avg_score,
+               MAX(e.overall_score) as max_score,
+               MIN(e.overall_score) as min_score
+        FROM calls c
+        LEFT JOIN evaluations e ON e.call_id = c.id
+        WHERE c.clerk_user_id = $1
+    """, clerk_user_id)
+
+    summary = {
+        "total_calls": stats["total_calls"],
+        "avg_score": round(float(stats["avg_score"]), 1),
+        "max_score": stats["max_score"],
+        "min_score": stats["min_score"],
+    }
+
+    return {"calls": calls, "summary": summary}
+
+
+# ══════════════════════════════════════════════
 # USER QUERIES
 # ══════════════════════════════════════════════
 

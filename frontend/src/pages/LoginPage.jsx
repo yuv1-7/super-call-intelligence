@@ -51,31 +51,28 @@ export default function LoginPage() {
                     </div>
                 </div>
 
-                {/* Right side: Authentication Card */}
+                {/* Right side: Authentication Card — FIXED: removed double nesting */}
                 <div className="login-auth-card">
-                    {/* Right side: Authentication Card */}
-                    <div className="login-auth-card">
-                        <SignIn
-                            appearance={{
-                                baseTheme: dark,
-                                variables: {
-                                    colorPrimary: '#3b82f6', // Professional blue
-                                    colorBackground: '#1e293b', // Solid slate background, no transparency
-                                    colorInputBackground: '#0f172a',
-                                    colorInputText: '#fff',
-                                    colorText: '#f8fafc',
-                                    colorTextSecondary: '#94a3b8',
-                                    borderRadius: '16px', // Less round, more professional
-                                },
-                                elements: {
-                                    cardBox: "clerk-pro-card",
-                                    socialButtonsBlockButton: "clerk-social-button",
-                                    formButtonPrimary: "clerk-primary-button",
-                                    formFieldInput: "clerk-input",
-                                },
-                            }}
-                        />
-                    </div>
+                    <SignIn
+                        appearance={{
+                            baseTheme: dark,
+                            variables: {
+                                colorPrimary: '#6366f1',
+                                colorBackground: '#1e293b',
+                                colorInputBackground: '#0f172a',
+                                colorInputText: '#fff',
+                                colorText: '#f8fafc',
+                                colorTextSecondary: '#94a3b8',
+                                borderRadius: '12px',
+                            },
+                            elements: {
+                                cardBox: "clerk-pro-card",
+                                socialButtonsBlockButton: "clerk-social-button",
+                                formButtonPrimary: "clerk-primary-button",
+                                formFieldInput: "clerk-input",
+                            },
+                        }}
+                    />
                 </div>
             </main>
         </div>

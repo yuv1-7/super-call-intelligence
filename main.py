@@ -243,6 +243,24 @@ async def get_team_performance_endpoint(request: Request, team_id: str = Query(d
     return {"agents": performance}
 
 
+@app.get("/api/team/agent/{clerk_id}/calls")
+async def get_agent_calls_endpoint(clerk_id: str, request: Request):
+    """Get a specific agent's call records and summary stats (team_lead / manager only)."""
+    if not _db_ready:
+        return JSONResponse({"error": "Database not configured"}, status_code=503)
+
+    from middleware.auth import get_current_user
+    from db.queries import get_agent_calls_for_team
+    user = await get_current_user(request)
+
+    if user["role"] == "agent":
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+
+    team_id = user["team_id"] if user["role"] == "team_lead" else None
+    result = await get_agent_calls_for_team(clerk_id, team_id, limit=10)
+    return result
+
+
 # ══════════════════════════════════════════════
 # DEV ENDPOINTS — Only available when DEV_MODE=true
 # ══════════════════════════════════════════════

@@ -1,18 +1,17 @@
-// components/Sidebar.jsx — Role-based navigation sidebar
+// components/Sidebar.jsx — Premium redesigned sidebar with smooth collapse
 
 import { useLocation, useNavigate } from 'react-router-dom';
 import { UserButton } from '@clerk/clerk-react';
 import {
-    LayoutDashboard, Phone, History, Users, Shield, Settings, ChevronLeft, ChevronRight
+    LayoutDashboard, Phone, History, Users, Shield, Settings,
+    ChevronLeft, ChevronRight
 } from 'lucide-react';
-import { useState } from 'react';
 
 const DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true';
 
-export default function Sidebar({ userRole }) {
+export default function Sidebar({ userRole, collapsed, onToggle }) {
     const location = useLocation();
     const navigate = useNavigate();
-    const [collapsed, setCollapsed] = useState(false);
 
     const navItems = [
         { path: '/', icon: LayoutDashboard, label: 'Dashboard', roles: ['agent', 'team_lead', 'manager'] },
@@ -27,22 +26,30 @@ export default function Sidebar({ userRole }) {
 
     const filteredItems = navItems.filter(item => item.roles.includes(userRole || 'agent'));
 
+    const roleLabel = (userRole || 'agent').replace('_', ' ');
+    const roleIcon = userRole === 'manager' ? '👔' : userRole === 'team_lead' ? '👥' : '🎧';
+
     return (
         <nav className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
-            <div className="sidebar-header">
-                <div className="sidebar-brand" onClick={() => navigate('/')}>
-                    <img src="/logo.png" alt="CallIQ" className="sidebar-logo" />
-                    {!collapsed && <span className="sidebar-title">CallIQ</span>}
+            {/* Brand */}
+            <div className="sidebar-brand" onClick={() => navigate('/')}>
+                <img src="/logo.png" alt="CallIQ" className="sidebar-logo" />
+                <div className="sidebar-brand-text">
+                    <span className="sidebar-title">CallIQ</span>
+                    <span className="sidebar-subtitle">Intelligence</span>
                 </div>
-                <button
-                    className="sidebar-toggle"
-                    onClick={() => setCollapsed(!collapsed)}
-                    title={collapsed ? 'Expand' : 'Collapse'}
-                >
-                    {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-                </button>
             </div>
 
+            {/* Toggle */}
+            <button
+                className="sidebar-collapse-btn"
+                onClick={onToggle}
+                title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+                {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+            </button>
+
+            {/* Navigation */}
             <div className="sidebar-nav">
                 {filteredItems.map(item => {
                     const Icon = item.icon;
@@ -51,25 +58,29 @@ export default function Sidebar({ userRole }) {
                     return (
                         <button
                             key={item.path}
-                            className={`sidebar-item ${isActive ? 'active' : ''}`}
+                            className={`sidebar-nav-item ${isActive ? 'active' : ''}`}
                             onClick={() => navigate(item.path)}
                             title={item.label}
                         >
-                            <Icon size={20} />
-                            {!collapsed && <span>{item.label}</span>}
+                            <div className="sidebar-nav-icon">
+                                <Icon size={18} />
+                            </div>
+                            <span className="sidebar-nav-label">{item.label}</span>
+                            {isActive && <div className="sidebar-active-indicator" />}
                         </button>
                     );
                 })}
             </div>
 
+            {/* Footer */}
             <div className="sidebar-footer">
-                {!collapsed && (
-                    <div className="sidebar-role-badge">
-                        <Shield size={14} />
-                        <span>{(userRole || 'agent').replace('_', ' ')}</span>
-                    </div>
-                )}
-                <UserButton />
+                <div className="sidebar-role-badge" title={roleLabel}>
+                    <span className="sidebar-role-icon">{roleIcon}</span>
+                    <span className="sidebar-role-text">{roleLabel}</span>
+                </div>
+                <div className="sidebar-user-btn">
+                    <UserButton />
+                </div>
             </div>
         </nav>
     );

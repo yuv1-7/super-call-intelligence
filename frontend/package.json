@@ -11,12 +11,13 @@
     "dependencies": {
         "@clerk/clerk-react": "^5.61.1",
         "@clerk/themes": "^2.4.55",
+        "framer-motion": "^12.38.0",
         "html2pdf.js": "^0.14.0",
         "lucide-react": "^0.575.0",
-
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
-        "react-router-dom": "^7.13.1"
+        "react-router-dom": "^7.13.1",
+        "recharts": "^3.8.0"
     },
     "devDependencies": {
         "@types/react": "^19.0.0",
