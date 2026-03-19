@@ -490,6 +490,10 @@ async def stream_endpoint(websocket: WebSocket):
                     logger.info(f"⚡ Fast path: sent profile for {policy_id}")
                 else:
                     logger.info(f"⚡ Fast path: no member found for {policy_id}")
+                    await safe_send(websocket, {
+                        "type": "member_lookup_status",
+                        "data": {"status": "searching", "message": "Policy mentioned — AI is searching..."},
+                    })
 
             # ⚡ Phone number fast path — try regex phone match if no member yet
             if not detected_member:
@@ -506,6 +510,10 @@ async def stream_endpoint(websocket: WebSocket):
                         logger.info(f"⚡ Fast path (phone): sent profile for {phone_raw}")
                     else:
                         logger.info(f"⚡ Fast path (phone): no member found for {phone_raw}")
+                        await safe_send(websocket, {
+                            "type": "member_lookup_status",
+                            "data": {"status": "searching", "message": "Phone detected — AI is searching..."},
+                        })
 
             # ═══════════════════════════════════════════
             # 🧠 SLOW PATH — LangGraph (only on finalized)
@@ -652,12 +660,44 @@ async def stream_endpoint(websocket: WebSocket):
                         })
                         logger.info(f"⚡ Sent {len(compliance_alerts)} compliance alerts to frontend.")
 
-                # Get the most recent languages detected for the customer
-                customer_languages = []
+                # Aggregate detected languages across recent customer utterances
+                # to avoid STT hallucinations on short words (e.g., "okay" tagged as Spanish).
+                # DUAL SIGNAL:
+                #   1. Long-term voting (last 10 utterances, ≥30%) — stability
+                #   2. Short-term recency (last 3 utterances, ≥2)  — quick adaptation
+                lang_counts: dict[str, int] = {}
+                recent_langs: list[list[str]] = []   # last 3 utterances' language lists
+                customer_utterance_count = 0
                 for line in reversed(call_transcript):
                     if line["speaker"] == "Customer" and line.get("languages"):
-                        customer_languages = line["languages"]
+                        customer_utterance_count += 1
+                        if len(recent_langs) < 3:
+                            recent_langs.append(line["languages"])
+                        for lang in line["languages"]:
+                            lang_counts[lang] = lang_counts.get(lang, 0) + 1
+                    if customer_utterance_count >= 10:
                         break
+
+                # Signal 1: Long-term — languages in ≥30% of sampled utterances
+                threshold = max(1, customer_utterance_count * 0.3)
+                longterm_langs = {lang for lang, cnt in lang_counts.items() if cnt >= threshold}
+
+                # Signal 2: Short-term — languages in ≥2 of the last 3 utterances
+                recent_counts: dict[str, int] = {}
+                for langs in recent_langs:
+                    for lang in langs:
+                        recent_counts[lang] = recent_counts.get(lang, 0) + 1
+                shortterm_langs = {lang for lang, cnt in recent_counts.items() if cnt >= 2}
+
+                # Union of both signals: stable AND responsive to switches
+                customer_languages = sorted(
+                    longterm_langs | shortterm_langs,
+                    key=lambda l: lang_counts.get(l, 0),
+                    reverse=True,
+                )
+                # Always include English as a baseline
+                if "en" not in customer_languages:
+                    customer_languages.append("en")
 
                 # 2. Setup state for ReAct Agent — knowledge + compliance injected into prompt
                 state = {

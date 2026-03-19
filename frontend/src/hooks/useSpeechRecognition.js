@@ -88,7 +88,8 @@ export function useDeepgramSpeech({ onTranscript }) {
                     channels: '2',
                     smart_format: 'true',
                     interim_results: 'true',
-                    endpointing: '1600',
+                    endpointing: '1000',
+                    utterance_end_ms: '1200',
                     encoding: 'linear16',
                     sample_rate: '16000',
                 });

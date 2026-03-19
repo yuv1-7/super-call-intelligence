@@ -28,7 +28,7 @@ class PCMProcessor extends AudioWorkletProcessor {
 
         // Hold counter: keeps ch0 muted for this many samples after ch1 goes
         // quiet, preventing choppy edges when a sentence trails off.
-        this._holdSamples = Math.round(0.3 * sampleRate); // 300 ms
+        this._holdSamples = Math.round(0.2 * sampleRate); // 200 ms
         this._holdCountdown = 0;
 
         // Allow runtime tuning from the main thread

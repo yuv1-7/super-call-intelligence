@@ -26,7 +26,7 @@ export default function CallPage() {
 
     const {
         isConnected, isProcessing, processingMessage,
-        transcripts, memberProfile, knowledgeDocs, complianceAlerts,
+        transcripts, addTranscript, memberProfile, memberLookupStatus, knowledgeDocs, complianceAlerts,
         suggestion, intent, postCallEvaluation,
         sendMessage, sendRawMessage, endCall, resetState,
     } = useWebSocket(WS_URL);
@@ -39,9 +39,27 @@ export default function CallPage() {
 
     const onTranscript = useCallback(
         (event) => {
+            // Map channel index to speaker label (same as backend _map_speaker)
+            const speakerLabel = event.speaker === '0' ? 'Agent' : event.speaker === '1' ? 'Customer' : `Speaker ${event.speaker}`;
+            const offset = event.offset || 0;
+            const h = Math.floor(offset / 3600);
+            const m = Math.floor((offset % 3600) / 60);
+            const s = Math.floor(offset % 60);
+            const timestamp = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+
+            // Display instantly from Deepgram (don't wait for backend echo)
+            addTranscript({
+                text: event.text,
+                is_finalized: event.isFinal,
+                speaker: speakerLabel,
+                timestamp,
+                offset,
+            });
+
+            // Still send to backend for AI processing
             sendMessage(event.text, event.isFinal, event.speaker, event.offset, event.languages || []);
         },
-        [sendMessage]
+        [sendMessage, addTranscript]
     );
 
     const { isListening, error: speechError, toggleListening } = useDeepgramSpeech({ onTranscript });
@@ -174,7 +192,7 @@ export default function CallPage() {
                     <div className="cards-scroll">
                         <div className="cards-row">
                             <KnowledgeCard docs={knowledgeDocs} />
-                            <MemberCard member={memberProfile} />
+                            <MemberCard member={memberProfile} lookupStatus={memberLookupStatus} />
                         </div>
                         <ComplianceCard alerts={complianceAlerts} />
                     </div>

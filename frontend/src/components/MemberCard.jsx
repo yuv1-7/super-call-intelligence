@@ -1,12 +1,22 @@
-export default function MemberCard({ member }) {
+export default function MemberCard({ member, lookupStatus }) {
     if (!member) {
+        const isSearching = lookupStatus?.status === 'searching';
         return (
             <div className="card member compact-empty">
                 <div className="card-header">
                     <div className="card-icon">👤</div>
                     <div>
                         <div className="card-title">Policyholder Profile</div>
-                        <div className="card-subtitle">Waiting for policy ID...</div>
+                        <div className="card-subtitle">
+                            {isSearching ? (
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f59e0b' }}>
+                                    <span className="status-dot processing" style={{ width: 8, height: 8, display: 'inline-block' }} />
+                                    {lookupStatus.message || 'AI is searching...'}
+                                </span>
+                            ) : (
+                                'Waiting for policy ID...'
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
