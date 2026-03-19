@@ -43,18 +43,24 @@ async def call_agent(state: AgentState) -> dict:
     
     # 2. Build the messages list (System + Conversation History)
     # The `state["messages"]` will hold the ongoing ReAct loop messages (Human -> AI (tool_calls) -> Tool -> AI)
-    # But for the *call center* perspective, the transcript is provided via the `transcript` flat string 
-    # and we just inject it as the latest HumanMessage if it's the first step in the ReAct loop.
+    # For the *call center* perspective, the transcript is provided via the `transcript` flat string 
+    # and we inject it as the latest HumanMessage ONLY on the first step in the ReAct loop.
+    # On subsequent iterations, the tool-call trace in state["messages"] already contains the context,
+    # and the full transcript is available in the system prompt.
     
     messages = [SystemMessage(content=sys_prompt_text)]
     
-    # The transcript is the current user's input for this turn.
-    # We must always include it before the tool-call trace if we are mid-loop.
-    messages.append(HumanMessage(content=state["transcript"]))
-    
-    # Append the ongoing ReAct loop messages (tool calls & results) if they exist.
     if state.get("messages"):
+        # Subsequent ReAct iteration: state["messages"] contains [AI(tool_calls), Tool(...)]
+        # The transcript context is already in the system prompt via full_transcript.
+        # Prepend the original HumanMessage so message ordering is valid,
+        # then append the tool-call trace.
+        messages.append(HumanMessage(content=state["transcript"]))
         messages.extend(state["messages"])
+    else:
+        # First iteration: inject the current utterance as HumanMessage
+        messages.append(HumanMessage(content=state["transcript"]))
+
     # 3. Call the LLM
     # In LangGraph streaming, astream_events will hook into this call because `llm_with_tools` is a Runnable.
     response = await llm_with_tools.ainvoke(messages)

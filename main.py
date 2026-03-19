@@ -144,8 +144,9 @@ async def get_calls_endpoint(
     request: Request,
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
+    claim_type: str = Query(default=None),
 ):
-    """Get call history filtered by user role."""
+    """Get call history filtered by user role. Optional claim_type filter for pagination."""
     if not _db_ready:
         return JSONResponse({"error": "Database not configured"}, status_code=503)
 
@@ -158,6 +159,7 @@ async def get_calls_endpoint(
         role=user["role"],
         limit=limit,
         offset=offset,
+        claim_type=claim_type,
     )
     return {"calls": calls, "total": len(calls)}
 
@@ -326,7 +328,6 @@ async def stream_endpoint(websocket: WebSocket):
     call_start_time = time.time()
     detected_intent = None
     claim_type = None
-    detected_claim_type: str | None = None
     detected_member = None
     accumulated_facts: dict = {}  # Persistent fact state across the entire call
     proactive_kb_sent = False  # Track whether we already sent knowledge docs to frontend
@@ -335,6 +336,7 @@ async def stream_endpoint(websocket: WebSocket):
     intent_stable_count: int = 0  # Counter for early-exit intent classification
     ws_alive = True  # Track WebSocket connection state
     agent_clerk_id: str | None = None  # Clerk user ID for the agent on this call
+    last_searched_claim_type: str | None = None  # Track when claim type changes to re-search KB
 
     try:
         while True:
@@ -368,7 +370,7 @@ async def stream_endpoint(websocket: WebSocket):
                     detected_intent=detected_intent,
                     member_data=detected_member,
                     accumulated_facts=accumulated_facts,
-                    claim_type=detected_claim_type,
+                    claim_type=claim_type,
                     knowledge_docs=last_knowledge_docs,
                 )
 
@@ -395,7 +397,7 @@ async def stream_endpoint(websocket: WebSocket):
                             policy_id=policy_id,
                             duration_secs=int(call_duration),
                             intent=detected_intent,
-                            claim_type=detected_claim_type,
+                            claim_type=claim_type,
                             transcript=call_transcript,
                             accumulated_facts=accumulated_facts,
                             member_data=detected_member,
@@ -416,13 +418,13 @@ async def stream_endpoint(websocket: WebSocket):
                 call_start_time = time.time()
                 detected_intent = None
                 claim_type = None
-                detected_claim_type = None
                 detected_member = None
                 proactive_kb_sent = False
                 last_knowledge_docs = []
                 last_compliance_alerts = []
                 accumulated_facts = {}
                 intent_stable_count = 0
+                last_searched_claim_type = None
                 ws_alive = True
                 continue
 
@@ -552,8 +554,11 @@ async def stream_endpoint(websocket: WebSocket):
                     
                     detected_intent = new_intent
                     claim_type = new_claim_type
-                    if claim_type:
-                        detected_claim_type = claim_type
+                    
+                    # Re-search KB when claim type changes
+                    if claim_type and claim_type != last_searched_claim_type:
+                        proactive_kb_sent = False
+                        logger.info(f"📚 Claim type changed to '{claim_type}' — will re-search knowledge base")
                     
                     if intent_stable_count >= 3:
                         logger.info(f"🎯 Intent stabilized as '{detected_intent}' — skipping future classification")
@@ -632,6 +637,7 @@ async def stream_endpoint(websocket: WebSocket):
                     # Send pre-fetched knowledge to frontend immediately
                     if knowledge_docs and not proactive_kb_sent:
                         proactive_kb_sent = True
+                        last_searched_claim_type = claim_type
                         await safe_send(websocket, {
                             "type": "knowledge",
                             "data": knowledge_docs,

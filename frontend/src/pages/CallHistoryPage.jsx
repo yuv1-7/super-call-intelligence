@@ -21,12 +21,12 @@ export default function CallHistoryPage({ userRole }) {
     async function loadCalls() {
         setLoading(true);
         try {
-            const res = await fetchWithAuth(`/api/calls?limit=${limit}&offset=${offset}`);
-            let filtered = res.calls || [];
+            let url = `/api/calls?limit=${limit}&offset=${offset}`;
             if (filterType !== 'all') {
-                filtered = filtered.filter(c => c.claim_type === filterType);
+                url += `&claim_type=${encodeURIComponent(filterType)}`;
             }
-            setCalls(filtered);
+            const res = await fetchWithAuth(url);
+            setCalls(res.calls || []);
         } catch (err) {
             console.error('Failed to load calls:', err);
         } finally {

@@ -210,55 +210,80 @@ async def save_evaluation(call_id: int, evaluation: dict) -> int:
     return eval_id
 
 
-async def get_calls(agent_id: str | None = None, team_id: str | None = None, role: str = "agent", limit: int = 50, offset: int = 0) -> list[dict]:
+async def get_calls(agent_id: str | None = None, team_id: str | None = None, role: str = "agent", limit: int = 50, offset: int = 0, claim_type: str | None = None) -> list[dict]:
     """Fetch call history filtered by role.
     
     - agent: only own calls
     - team_lead: all calls from agents in their team
     - manager: all calls
+    
+    Optional claim_type filter for server-side filtering with correct pagination.
     """
     pool = get_pool()
 
+    # Build optional claim_type filter clause
+    claim_filter = ""
+
     if role == "manager":
+        params = []
+        base_where = ""
+        if claim_type:
+            base_where = "WHERE c.claim_type = $1"
+            params = [claim_type, limit, offset]
+        else:
+            params = [limit, offset]
         rows = await pool.fetch(
-            """
+            f"""
             SELECT c.*, u.name as agent_name, u.team_id,
                    e.overall_score, e.grade
             FROM calls c
             JOIN users u ON c.agent_id = u.clerk_user_id
             LEFT JOIN evaluations e ON e.call_id = c.id
+            {base_where}
             ORDER BY c.start_time DESC
-            LIMIT $1 OFFSET $2
+            LIMIT ${len(params) - 1} OFFSET ${len(params)}
             """,
-            limit, offset
+            *params
         )
     elif role == "team_lead" and team_id:
+        if claim_type:
+            params = [team_id, claim_type, limit, offset]
+            where_clause = "WHERE u.team_id = $1 AND c.claim_type = $2"
+        else:
+            params = [team_id, limit, offset]
+            where_clause = "WHERE u.team_id = $1"
         rows = await pool.fetch(
-            """
+            f"""
             SELECT c.*, u.name as agent_name, u.team_id,
                    e.overall_score, e.grade
             FROM calls c
             JOIN users u ON c.agent_id = u.clerk_user_id
             LEFT JOIN evaluations e ON e.call_id = c.id
-            WHERE u.team_id = $1
+            {where_clause}
             ORDER BY c.start_time DESC
-            LIMIT $2 OFFSET $3
+            LIMIT ${len(params) - 1} OFFSET ${len(params)}
             """,
-            team_id, limit, offset
+            *params
         )
     else:
+        if claim_type:
+            params = [agent_id, claim_type, limit, offset]
+            where_clause = "WHERE c.agent_id = $1 AND c.claim_type = $2"
+        else:
+            params = [agent_id, limit, offset]
+            where_clause = "WHERE c.agent_id = $1"
         rows = await pool.fetch(
-            """
+            f"""
             SELECT c.*, u.name as agent_name, u.team_id,
                    e.overall_score, e.grade
             FROM calls c
             JOIN users u ON c.agent_id = u.clerk_user_id
             LEFT JOIN evaluations e ON e.call_id = c.id
-            WHERE c.agent_id = $1
+            {where_clause}
             ORDER BY c.start_time DESC
-            LIMIT $2 OFFSET $3
+            LIMIT ${len(params) - 1} OFFSET ${len(params)}
             """,
-            agent_id, limit, offset
+            *params
         )
 
     return [_call_row_to_dict(row) for row in rows]
@@ -518,11 +543,11 @@ async def get_agent_calls_for_team(clerk_user_id: str, team_id: str | None = Non
 
     # Get recent calls with evaluations
     rows = await pool.fetch("""
-        SELECT c.id, c.intent, c.start_time, c.end_time,
+        SELECT c.id, c.intent, c.start_time, c.duration_secs,
                e.overall_score, e.grade
         FROM calls c
         LEFT JOIN evaluations e ON e.call_id = c.id
-        WHERE c.clerk_user_id = $1
+        WHERE c.agent_id = $1
         ORDER BY c.start_time DESC NULLS LAST
         LIMIT $2
     """, clerk_user_id, limit)
@@ -531,7 +556,7 @@ async def get_agent_calls_for_team(clerk_user_id: str, team_id: str | None = Non
         "id": str(r["id"]),
         "intent": r["intent"],
         "start_time": r["start_time"].isoformat() if r["start_time"] else None,
-        "end_time": r["end_time"].isoformat() if r["end_time"] else None,
+        "duration_secs": r["duration_secs"],
         "overall_score": r["overall_score"],
         "grade": r["grade"],
     } for r in rows]
@@ -544,7 +569,7 @@ async def get_agent_calls_for_team(clerk_user_id: str, team_id: str | None = Non
                MIN(e.overall_score) as min_score
         FROM calls c
         LEFT JOIN evaluations e ON e.call_id = c.id
-        WHERE c.clerk_user_id = $1
+        WHERE c.agent_id = $1
     """, clerk_user_id)
 
     summary = {

@@ -395,6 +395,7 @@ async def _run_call_insights(
     overall_score: int,
     member_data: dict | None,
     claim_type: str | None,
+    caller_context: str = "",
 ) -> dict:
     user_prompt = f"""CALL TRANSCRIPT:
 {formatted_transcript}
@@ -403,6 +404,12 @@ CONTEXT:
 Duration: {int(call_duration)}s | Intent: {detected_intent or 'unknown'} | Line: {claim_type or 'unknown'}
 Policy Holder: {member_data.get('name') if member_data else 'NOT located during call'}
 Rubric Score: {overall_score}/100
+{caller_context}
+
+IMPORTANT: When describing who called and the caller's identity, use the verified policyholder 
+and caller names provided above (not raw transcript text which may contain speech-to-text errors).
+If the caller IS the policyholder, refer to them by the verified policyholder name.
+If someone else called on behalf of the policyholder, use the caller name from the conversation.
 
 Write the complete evaluation. Every observation must cite the transcript."""
 
@@ -448,28 +455,17 @@ async def generate_post_call_evaluation(
     # Instant FNOL scoring
     fnol_result = calculate_fnol_completeness(accumulated_facts, claim_type)
 
-    # Rubric scoring (Call A) and Insights generation (Call B) — run in parallel
-    # Insights receives overall_score=0 since its quality doesn't depend on the exact score
-    rubric_result, insights_result = await asyncio.gather(
-        _run_agent_rubric(
-            formatted_transcript=formatted_transcript,
-            call_duration=call_duration,
-            detected_intent=detected_intent,
-            member_data=member_data,
-            claim_type=claim_type,
-            accumulated_facts=accumulated_facts,
-        ),
-        _run_call_insights(
-            formatted_transcript=formatted_transcript,
-            call_duration=call_duration,
-            detected_intent=detected_intent,
-            overall_score=0,  # Placeholder — insights quality doesn't depend on exact score
-            member_data=member_data,
-            claim_type=claim_type,
-        ),
+    # Step 1: Run rubric scoring first to get the actual score
+    rubric_result = await _run_agent_rubric(
+        formatted_transcript=formatted_transcript,
+        call_duration=call_duration,
+        detected_intent=detected_intent,
+        member_data=member_data,
+        claim_type=claim_type,
+        accumulated_facts=accumulated_facts,
     )
 
-    # Extract the 7 sections from the structured output
+    # Extract the 7 sections and compute normalized score (max = 110 pts → percentage)
     extracted_sections = [
         rubric_result["section_1_opening"],
         rubric_result["section_2_identity"],
@@ -479,8 +475,33 @@ async def generate_post_call_evaluation(
         rubric_result["section_6_compliance"],
         rubric_result["section_7_close"],
     ]
-    overall_score = min(sum(s["points_awarded"] for s in extracted_sections), 100)
+    MAX_RUBRIC_POINTS = 110  # 12+14+20+18+18+18+10
+    raw_points = sum(s["points_awarded"] for s in extracted_sections)
+    overall_score = round((raw_points / MAX_RUBRIC_POINTS) * 100)
     grade = _calculate_grade(overall_score)
+
+    # Build caller identity context so insights LLM uses verified names, not STT errors
+    caller_context = ""
+    if member_data:
+        caller_context += f"\nPolicyholder Name (verified): {member_data.get('name', 'Unknown')}"
+    if accumulated_facts:
+        caller_name = accumulated_facts.get('caller_name')
+        relationship = accumulated_facts.get('relationship_to_policyholder')
+        if caller_name:
+            caller_context += f"\nCaller Name (from conversation): {caller_name}"
+        if relationship:
+            caller_context += f"\nRelationship to Policyholder: {relationship}"
+
+    # Step 2: Run insights with the actual computed score and caller context
+    insights_result = await _run_call_insights(
+        formatted_transcript=formatted_transcript,
+        call_duration=call_duration,
+        detected_intent=detected_intent,
+        overall_score=overall_score,
+        member_data=member_data,
+        claim_type=claim_type,
+        caller_context=caller_context,
+    )
 
     ci = insights_result.get("caller_insights", {})
 
