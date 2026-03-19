@@ -110,10 +110,17 @@ def setup_azure_index():
     index = SearchIndex(name=INDEX_NAME, fields=fields, vector_search=vector_search)
     
     try:
+        print(f"Clearing existing index '{INDEX_NAME}' if it exists...")
+        index_client.delete_index(INDEX_NAME)
+        print("Existing index deleted.")
+    except Exception:
+        pass # Index might not exist yet, which is fine
+
+    try:
         result = index_client.create_or_update_index(index)
-        print(f"Index created/updated successfully: {result.name}")
+        print(f"Index created successfully: {result.name}")
     except Exception as e:
-        print(f"Failed to create/update index. Ensure your endpoint and key are set. Error: {e}")
+        print(f"Failed to create index. Ensure your endpoint and key are set. Error: {e}")
         return False
     return True
 
