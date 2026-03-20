@@ -40,6 +40,7 @@ class EntityExtraction(BaseModel):
 class ClaimFacts(BaseModel):
     """Structured extraction of all claim-relevant facts mentioned in the conversation."""
     caller_name: str | None
+    caller_phone: str | None
     policy_number: str | None
     relationship_to_policyholder: str | None
     incident_description: str | None
@@ -165,6 +166,11 @@ CRITICAL — caller_name rules:
 - When the customer says "Hi George" or "Hello Josh", they are ADDRESSING THE AGENT by the agent's name. This is NOT the caller's name. Do NOT extract the agent's name as the caller_name.
 - Only extract caller_name if the customer explicitly introduces themselves, e.g. "My name is Sarah" or "This is Ravi calling".
 - If the customer has not stated their own name, return null for caller_name.
+
+CRITICAL — caller_phone rules:
+- Extract the caller's phone number if explicitly stated (e.g. "my number is 555-1234").
+- Format it nicely with hyphens or just extract digits.
+- Return null if no phone number was mentioned.
 
 CRITICAL — policy_number rules:
 - Extract the policy number ONLY if the customer explicitly states it (e.g. "my policy number is CAR-12345").

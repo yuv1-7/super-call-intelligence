@@ -492,7 +492,7 @@ async def stream_endpoint(websocket: WebSocket):
                     logger.info(f"⚡ Fast path: no member found for {policy_id}")
                     await safe_send(websocket, {
                         "type": "member_lookup_status",
-                        "data": {"status": "searching", "message": "Policy mentioned — AI is searching..."},
+                        "data": {"status": "failed", "message": f"Could not find policy {policy_id}. Please verify."},
                     })
 
             # ⚡ Phone number fast path — try regex phone match if no member yet
@@ -512,7 +512,7 @@ async def stream_endpoint(websocket: WebSocket):
                         logger.info(f"⚡ Fast path (phone): no member found for {phone_raw}")
                         await safe_send(websocket, {
                             "type": "member_lookup_status",
-                            "data": {"status": "searching", "message": "Phone detected — AI is searching..."},
+                            "data": {"status": "failed", "message": f"Could not find account for phone {phone_raw}."},
                         })
 
             # ═══════════════════════════════════════════
@@ -612,16 +612,18 @@ async def stream_endpoint(websocket: WebSocket):
                         accumulated_facts[key] = val
 
                 # Try to fetch member from accumulated facts if not already detected
-                if not detected_member and accumulated_facts.get("policy_number"):
-                    policy_id = accumulated_facts["policy_number"]
-                    member = await get_member(policy_id=policy_id)
-                    if member:
-                        detected_member = member
-                        logger.info(f"🧠 Slow path: Found member {policy_id} via accumulated facts")
-                        await safe_send(websocket, {
-                            "type": "member_profile",
-                            "data": member,
-                        })
+                if not detected_member:
+                    policy_id = accumulated_facts.get("policy_number")
+                    phone = accumulated_facts.get("caller_phone")
+                    if policy_id or phone:
+                        member = await get_member(policy_id=policy_id, phone=phone)
+                        if member:
+                            detected_member = member
+                            logger.info(f"🧠 Slow path: Found member via accumulated facts")
+                            await safe_send(websocket, {
+                                "type": "member_profile",
+                                "data": member,
+                            })
 
                 logger.info(f"📋 Accumulated facts: {accumulated_facts}")
                 logger.info(f"📚 Pre-fetched {len(knowledge_docs)} knowledge docs, {len(compliance_alerts)} compliance alerts")
@@ -774,13 +776,20 @@ async def stream_endpoint(websocket: WebSocket):
                             
                             logger.info(f"🔧 Tool {name} finished. Received tool_data keys: {tool_data.keys() if isinstance(tool_data, dict) else type(tool_data)}")
 
-                            if name == "lookup_policyholder" and tool_data and "status" not in tool_data:
-                                # Found a valid member profile
-                                detected_member = tool_data
-                                await safe_send(websocket, {
-                                    "type": "member_profile",
-                                    "data": detected_member,
-                                })
+                            if name == "lookup_policyholder" and tool_data:
+                                if "status" not in tool_data:
+                                    # Found a valid member profile
+                                    detected_member = tool_data
+                                    await safe_send(websocket, {
+                                        "type": "member_profile",
+                                        "data": detected_member,
+                                    })
+                                else:
+                                    # Not found
+                                    await safe_send(websocket, {
+                                        "type": "member_lookup_status",
+                                        "data": {"status": "failed", "message": tool_data.get("message", "Lookup failed. Please verify the information.")}
+                                    })
                             elif name == "search_knowledge_base" and tool_data.get("results"):
                                 await safe_send(websocket, {
                                     "type": "knowledge",

@@ -8,23 +8,23 @@ def _format_collected_facts(facts: dict | None, claim_type: str | None = None) -
 
     # ─── Define which fields matter per claim type ─── #
     _CAR_FIELDS = [
-        "caller_name", "policy_number", "incident_description",
+        "caller_name", "caller_phone", "policy_number", "incident_description",
         "date_of_incident", "time_of_incident", "location_of_incident",
         "injuries_reported", "vehicle_drivable", "police_report_filed",
         "police_report_number", "other_parties_involved",
     ]
     _LIFE_FIELDS = [
-        "caller_name", "policy_number", "relationship_to_policyholder",
+        "caller_name", "caller_phone", "policy_number", "relationship_to_policyholder",
         "date_of_incident", "location_of_incident", "cause_of_death",
     ]
     _MEDICAL_FIELDS = [
-        "caller_name", "policy_number", "hospital_name",
+        "caller_name", "caller_phone", "policy_number", "hospital_name",
         "admission_date", "diagnosis", "treating_doctor",
         "cashless_or_reimbursement", "pre_authorization_number",
         "discharge_date",
     ]
     _GENERAL_FIELDS = [
-        "caller_name", "policy_number", "incident_description",
+        "caller_name", "caller_phone", "policy_number", "incident_description",
     ]
 
     if claim_type == "life_insurance":
@@ -38,6 +38,7 @@ def _format_collected_facts(facts: dict | None, claim_type: str | None = None) -
 
     all_labels = {
         "caller_name": "Caller's Name",
+        "caller_phone": "Phone Number",
         "policy_number": "Policy Number",
         "relationship_to_policyholder": "Relationship to Policyholder",
         "incident_description": "What Happened",
