@@ -24,15 +24,17 @@ async def lookup_policyholder(policy_id: Optional[str] = None, phone: Optional[s
 
 
 @tool
-def search_knowledge_base(query: str, category: Optional[str] = None) -> str:
+def search_knowledge_base(query: str, category: Optional[str] = None, insurance_type: Optional[str] = None) -> str:
     """
     Search the insurance knowledge base for procedures, timelines, required documents, 
     and coverage rules based on a user's intent or questions.
     Args:
         query: The search keywords to match against (e.g. "car accident towing").
         category: Optional category filter. E.g. "car_insurance", "life_insurance".
+        insurance_type: Optional insurance domain filter. E.g. "car_insurance", "life_insurance", "medical_insurance".
+                       This filters results to only the relevant insurance type to avoid cross-domain contamination.
     """
-    docs = search_knowledge(query, category=category)
+    docs = search_knowledge(query, claim_type=insurance_type or category, category=category)
     if not docs:
         return json.dumps({"results": []})
     
