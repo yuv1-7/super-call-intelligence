@@ -13,14 +13,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
+load_dotenv()
 
 from data.members import get_member, set_db_available
 from agent.graph import build_graph
 from services.extractor import extract_claim_facts, classify_intent
 from services.evaluator import generate_post_call_evaluation
 from data.knowledge import search_knowledge, get_compliance_alerts, warmup as warmup_knowledge
-
-load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("call-intelligence")

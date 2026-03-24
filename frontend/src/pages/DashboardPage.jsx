@@ -5,12 +5,11 @@ import { useNavigate } from 'react-router-dom';
 import { useApi } from '../hooks/useApi.js';
 import { motion } from 'framer-motion';
 import {
-    PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
-    Tooltip, ResponsiveContainer
+    PieChart, Pie, Cell, Tooltip, ResponsiveContainer
 } from 'recharts';
 import {
-    Phone, TrendingUp, Award, Activity, ArrowRight,
-    BarChart3, Users, Clock, Zap, Target, ChevronRight
+    Phone, TrendingUp, Award, Activity,
+    BarChart3, Users, Clock, ChevronRight
 } from 'lucide-react';
 
 const GRADE_COLORS = {
@@ -93,13 +92,20 @@ export default function DashboardPage({ userRole, userName }) {
             ? 'Team Dashboard'
             : 'My Performance';
 
+    const greeting = (() => {
+        const h = new Date().getHours();
+        if (h < 12) return 'Good morning';
+        if (h < 17) return 'Good afternoon';
+        return 'Good evening';
+    })();
+
     return (
         <motion.div className="dashboard-page" {...fadeIn}>
             {/* Welcome Header */}
             <div className="page-header">
                 <div className="page-header-info">
-                    <h1 className="page-title">Welcome back, {userName}</h1>
-                    <p className="page-subtitle">{roleTitle}</p>
+                    <h1 className="page-title">{greeting}, <span className="gradient-name">{userName}</span></h1>
+                    <p className="page-subtitle">{roleTitle} • {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</p>
                 </div>
                 {userRole !== 'manager' && (
                     <button className="btn-primary" onClick={() => navigate('/call')}>
@@ -141,77 +147,101 @@ export default function DashboardPage({ userRole, userName }) {
             <div className="dashboard-grid">
                 {/* Grade Distribution */}
                 {gradeData.length > 0 && (
-                    <div className="dash-card">
+                    <div className="dash-card dash-card--wide">
                         <div className="dash-card-header">
                             <h3><BarChart3 size={16} /> Grade Distribution</h3>
+                            <span className="grade-total-badge">{totalCalls} total</span>
                         </div>
                         <div className="dash-card-body chart-container">
                             {userRole === 'agent' ? (
-                                <ResponsiveContainer width="100%" height={220}>
-                                    <PieChart>
-                                        <Pie
-                                            data={gradeData}
-                                            cx="50%"
-                                            cy="50%"
-                                            innerRadius={55}
-                                            outerRadius={85}
-                                            paddingAngle={3}
-                                            dataKey="value"
-                                            stroke="none"
-                                        >
-                                            {gradeData.map((entry, idx) => (
-                                                <Cell key={idx} fill={entry.color} />
-                                            ))}
-                                        </Pie>
-                                        <Tooltip
-                                            contentStyle={{
-                                                background: '#1e293b',
-                                                border: '1px solid rgba(255,255,255,0.1)',
-                                                borderRadius: '8px',
-                                                color: '#f1f5f9',
-                                                fontSize: '0.82rem',
-                                            }}
-                                        />
-                                    </PieChart>
-                                </ResponsiveContainer>
+                                /* Agent: Donut chart */
+                                <div className="donut-wrapper">
+                                    <ResponsiveContainer width="100%" height={200}>
+                                        <PieChart>
+                                            <Pie
+                                                data={gradeData}
+                                                cx="50%"
+                                                cy="50%"
+                                                innerRadius={58}
+                                                outerRadius={88}
+                                                paddingAngle={3}
+                                                dataKey="value"
+                                                stroke="none"
+                                                startAngle={90}
+                                                endAngle={-270}
+                                            >
+                                                {gradeData.map((entry, idx) => (
+                                                    <Cell key={idx} fill={entry.color} />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip
+                                                contentStyle={{
+                                                    background: 'rgba(15,23,42,0.95)',
+                                                    border: '1px solid rgba(255,255,255,0.08)',
+                                                    borderRadius: '10px',
+                                                    color: '#f1f5f9',
+                                                    fontSize: '0.82rem',
+                                                    boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                                                    padding: '8px 14px',
+                                                }}
+                                                formatter={(value, name) => [
+                                                    <span style={{ fontWeight: 700 }}>{value} calls</span>,
+                                                    name
+                                                ]}
+                                            />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                </div>
                             ) : (
-                                <ResponsiveContainer width="100%" height={220}>
-                                    <BarChart data={gradeData} layout="vertical" barSize={16}>
-                                        <XAxis type="number" hide />
-                                        <YAxis
-                                            type="category"
-                                            dataKey="name"
-                                            width={120}
-                                            tick={{ fill: '#94a3b8', fontSize: 12 }}
-                                            axisLine={false}
-                                            tickLine={false}
-                                        />
-                                        <Tooltip
-                                            contentStyle={{
-                                                background: '#1e293b',
-                                                border: '1px solid rgba(255,255,255,0.1)',
-                                                borderRadius: '8px',
-                                                color: '#f1f5f9',
-                                                fontSize: '0.82rem',
-                                            }}
-                                        />
-                                        <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-                                            {gradeData.map((entry, idx) => (
-                                                <Cell key={idx} fill={entry.color} />
-                                            ))}
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
+                                /* Manager/Lead: Custom horizontal bar chart */
+                                <div className="grade-bars-custom">
+                                    {gradeData.map((g, idx) => {
+                                        const maxVal = Math.max(...gradeData.map(d => d.value));
+                                        const pct = maxVal > 0 ? (g.value / maxVal) * 100 : 0;
+                                        return (
+                                            <motion.div
+                                                key={g.name}
+                                                className="grade-bar-row"
+                                                initial={{ opacity: 0, x: -16 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                transition={{ delay: idx * 0.07, duration: 0.35 }}
+                                            >
+                                                <div className="grade-bar-label-col">
+                                                    <span className="grade-bar-dot" style={{ background: g.color }} />
+                                                    <span className="grade-bar-name">{g.name}</span>
+                                                </div>
+                                                <div className="grade-bar-track-col">
+                                                    <div className="grade-bar-track-bg">
+                                                        <motion.div
+                                                            className="grade-bar-track-fill"
+                                                            style={{ background: g.color }}
+                                                            initial={{ width: 0 }}
+                                                            animate={{ width: `${pct}%` }}
+                                                            transition={{ delay: idx * 0.07 + 0.15, duration: 0.5, ease: 'easeOut' }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="grade-bar-count-col">
+                                                    <span className="grade-bar-count" style={{ color: g.color }}>{g.value}</span>
+                                                    <span className="grade-bar-pct">{totalCalls > 0 ? Math.round((g.value / totalCalls) * 100) : 0}%</span>
+                                                </div>
+                                            </motion.div>
+                                        );
+                                    })}
+                                </div>
                             )}
-                            <div className="grade-legend">
-                                {gradeData.map(g => (
-                                    <div key={g.name} className="grade-legend-item">
-                                        <span className="grade-dot" style={{ background: g.color }} />
-                                        <span className="grade-legend-label">{g.name}</span>
-                                        <span className="grade-legend-count">{g.value}</span>
-                                    </div>
-                                ))}
-                            </div>
+                            {/* Legend for donut (agent view) */}
+                            {userRole === 'agent' && (
+                                <div className="grade-legend">
+                                    {gradeData.map(g => (
+                                        <div key={g.name} className="grade-legend-item">
+                                            <span className="grade-dot" style={{ background: g.color }} />
+                                            <span className="grade-legend-label">{g.name}</span>
+                                            <span className="grade-legend-count">{g.value}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -310,6 +340,9 @@ export default function DashboardPage({ userRole, userName }) {
                     </div>
                 </div>
             </div>
+
+            {/* Bottom spacer for scroll breathing room */}
+            <div style={{ height: '24px' }} />
         </motion.div>
     );
 }
