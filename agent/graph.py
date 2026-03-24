@@ -1,7 +1,7 @@
 from langgraph.graph import StateGraph, START, END
 
 from agent.state import AgentState
-from agent.nodes import call_agent, tool_node, should_continue
+from agent.nodes import call_agent, _get_tool_node, should_continue
 
 def build_graph():
     """
@@ -16,7 +16,7 @@ def build_graph():
     
     # Add Nodes
     builder.add_node("agent", call_agent)
-    builder.add_node("tools", tool_node)
+    builder.add_node("tools", _get_tool_node())
     
     # Define Edges
     builder.add_edge(START, "agent")

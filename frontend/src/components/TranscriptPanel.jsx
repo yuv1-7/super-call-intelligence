@@ -1,18 +1,18 @@
 import { useRef, useEffect } from 'react';
+import { Mic, Activity, Headphones, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 /**
  * Live transcript panel with speaker diarization.
- * Agent = Guest-1 (cyan), Customer = Guest-2 (amber).
- * Shows [Agent 00:00:12]: "text" format with live pulse when listening.
  */
 export default function TranscriptPanel({ transcripts, callActive, isListening }) {
     const bottomRef = useRef(null);
 
     useEffect(() => {
-        // Use auto behavior and a slight timeout to ensure rapid updates do not block the smooth scroll animation
-        setTimeout(() => {
-            bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
-        }, 50);
+        const timer = setTimeout(() => {
+            bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }, 100);
+        return () => clearTimeout(timer);
     }, [transcripts]);
 
     const getSpeakerClass = (speaker) => {
@@ -26,38 +26,65 @@ export default function TranscriptPanel({ transcripts, callActive, isListening }
     return (
         <div className="transcript-panel">
             <div className="panel-header">
-                <span className="icon">🎙️</span>
-                Live Transcript Stream
-                {isListening && <span className="live-badge">● LIVE</span>}
-            </div>
-            <div className="transcript-messages">
-                {transcripts.length === 0 && (
-                    <div className="empty-state">
-                        <div className="empty-icon">🎧</div>
-                        <h3>{callActive ? 'Listening...' : 'No Active Call'}</h3>
-                        <p>
-                            {callActive
-                                ? 'Speak into the microphone. The agent should speak first.'
-                                : 'Click "Start Call" to begin listening. Azure Speech will automatically distinguish between Agent and Customer.'}
-                        </p>
+                <div className="panel-header-title">
+                    <Activity size={18} className="icon-pulse" />
+                    <span>Live Transcript Stream</span>
+                </div>
+                {isListening && (
+                    <div className="live-status-badge">
+                        <span className="live-dot pulse" />
+                        <span>LIVE</span>
                     </div>
                 )}
-                {transcripts.map((t) => (
-                    <div
-                        key={t.id}
+            </div>
+            
+            <div className="transcript-messages">
+                <AnimatePresence>
+                    {transcripts.length === 0 && (
+                        <motion.div 
+                            className="transcript-empty"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0 }}
+                        >
+                            <div className="empty-illustration">
+                                <Headphones size={48} strokeWidth={1.5} />
+                                <div className="illustration-glow" />
+                            </div>
+                            <h3>{callActive ? 'Listening for audio...' : 'No Active Call'}</h3>
+                            <p>
+                                {callActive
+                                    ? 'Start speaking to see real-time transcription and AI analysis.'
+                                    : 'Click "Start Call" to begin the live intelligence stream.'}
+                            </p>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {transcripts.map((t, idx) => (
+                    <motion.div
+                        key={t.id || idx}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
                         className={`transcript-line ${t.is_finalized ? 'finalized' : 'partial'} ${getSpeakerClass(t.speaker)}`}
                     >
                         {t.speaker && t.is_finalized && (
-                            <span className={`speaker-tag ${getSpeakerClass(t.speaker)}`}>
-                                [{t.speaker} {t.timestamp || ''}]
-                            </span>
+                            <div className="transcript-meta">
+                                <span className={`speaker-name ${getSpeakerClass(t.speaker)}`}>
+                                    {t.speaker}
+                                </span>
+                                <span className="transcript-time">{t.timestamp}</span>
+                            </div>
                         )}
-                        <span className="transcript-text">
-                            {t.is_finalized ? `"${t.text}"` : t.text}
-                        </span>
-                    </div>
+                        <div className="transcript-bubble">
+                            <p className="transcript-text">
+                                {t.text}
+                            </p>
+                            {!t.is_finalized && <span className="typing-indicator">...</span>}
+                        </div>
+                    </motion.div>
                 ))}
-                <div ref={bottomRef} />
+                <div ref={bottomRef} style={{ height: '20px' }} />
             </div>
         </div>
     );

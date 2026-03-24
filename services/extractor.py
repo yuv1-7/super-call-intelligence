@@ -6,7 +6,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+_client = None
+
+def _get_client() -> AsyncOpenAI:
+    global _client
+    if _client is None:
+        _client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    return _client
 
 FAST_MODEL = "gpt-4.1-nano"
 
@@ -76,7 +82,7 @@ Analyze the caller's statement (which may be in English, another language, or a 
 - "intent": the most fitting FNOL category.
 - "claim_type": the broad insurance line the intent falls under."""
 
-    response = await client.beta.chat.completions.parse(
+    response = await _get_client().beta.chat.completions.parse(
         model=FAST_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
@@ -106,7 +112,7 @@ Analyze the provided transcript segment (which may contain multiple sentences in
 - "phone": phone number referenced. You MUST translate any spoken numbers into English digits and stitch them if split across sentences.
 Return null for fields not found."""
 
-    response = await client.beta.chat.completions.parse(
+    response = await _get_client().beta.chat.completions.parse(
         model=FAST_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
@@ -196,7 +202,7 @@ CRITICAL — Medical claim fields:
 - pre_authorization_number: Pre-authorization or approval reference number if provided by the caller or hospital.
 - Return null for all medical fields if this is not a medical claim."""
 
-    response = await client.beta.chat.completions.parse(
+    response = await _get_client().beta.chat.completions.parse(
         model=FAST_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},

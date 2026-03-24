@@ -6,20 +6,33 @@ from agent.state import AgentState
 from agent.prompts import generate_system_prompt
 from agent.tools import lookup_policyholder, search_knowledge_base, check_compliance_rules
 
-# Initialize the OpenAI Client for the ChatModel (bound to tools)
-# We are using ChatOpenAI from langchain-openai here to bind native tools properly
 from langchain_openai import ChatOpenAI
-
-llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0.3, streaming=True)
 
 # Define our tools array
 tools = [lookup_policyholder, search_knowledge_base, check_compliance_rules]
 
-# Bind tools to the LLM
-llm_with_tools = llm.bind_tools(tools)
+# Lazy singletons — initialized on first use so load_dotenv() has already run
+_llm = None
+_llm_with_tools = None
+_tool_node = None
 
-# Create the standard prebuilt ToolNode
-tool_node = ToolNode(tools)
+def _get_llm():
+    global _llm
+    if _llm is None:
+        _llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0.3, streaming=True)
+    return _llm
+
+def _get_llm_with_tools():
+    global _llm_with_tools
+    if _llm_with_tools is None:
+        _llm_with_tools = _get_llm().bind_tools(tools)
+    return _llm_with_tools
+
+def _get_tool_node():
+    global _tool_node
+    if _tool_node is None:
+        _tool_node = ToolNode(tools)
+    return _tool_node
 
 
 async def call_agent(state: AgentState) -> dict:
@@ -63,7 +76,7 @@ async def call_agent(state: AgentState) -> dict:
 
     # 3. Call the LLM
     # In LangGraph streaming, astream_events will hook into this call because `llm_with_tools` is a Runnable.
-    response = await llm_with_tools.ainvoke(messages)
+    response = await _get_llm_with_tools().ainvoke(messages)
     
     # 4. Return as append operation to state
     return {"messages": [response]}

@@ -17,7 +17,14 @@ load_dotenv()
 
 logger = logging.getLogger("call-intelligence")
 
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+_client = None
+
+def _get_client() -> AsyncOpenAI:
+    global _client
+    if _client is None:
+        _client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    return _client
+
 MODEL = "gpt-4.1-mini"
 
 
@@ -375,7 +382,7 @@ Policy Data: {json.dumps(member_data, indent=2) if member_data else 'Not located
 
 Score every criterion. Provide direct agent quote as evidence or "Not observed in transcript"."""
 
-    response = await client.beta.chat.completions.parse(
+    response = await _get_client().beta.chat.completions.parse(
         model=MODEL,
         messages=[
             {"role": "system", "content": _RUBRIC_SYSTEM_PROMPT},
@@ -413,7 +420,7 @@ If someone else called on behalf of the policyholder, use the caller name from t
 
 Write the complete evaluation. Every observation must cite the transcript."""
 
-    response = await client.beta.chat.completions.parse(
+    response = await _get_client().beta.chat.completions.parse(
         model=MODEL,
         messages=[
             {"role": "system", "content": _INSIGHTS_SYSTEM_PROMPT},
