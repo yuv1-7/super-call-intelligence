@@ -9,7 +9,7 @@ import {
 } from 'recharts';
 import {
     Users, TrendingUp, Award, BarChart3, ChevronDown, ChevronUp,
-    Phone, Clock, ArrowLeft, Target, User
+    Phone, Clock, ArrowLeft, Target, User, PhoneOff, UserX
 } from 'lucide-react';
 
 export default function TeamDashboardPage({ userRole }) {
@@ -20,6 +20,9 @@ export default function TeamDashboardPage({ userRole }) {
     const [expandedAgent, setExpandedAgent] = useState(null);
     const [agentCalls, setAgentCalls] = useState({});
     const [loadingAgent, setLoadingAgent] = useState(null);
+    const [selectedTeam, setSelectedTeam] = useState(null);
+    const [teamAgents, setTeamAgents] = useState(null);
+    const [loadingTeam, setLoadingTeam] = useState(false);
 
     useEffect(() => {
         loadTeamData();
@@ -38,6 +41,28 @@ export default function TeamDashboardPage({ userRole }) {
         } finally {
             setLoading(false);
         }
+    }
+
+    async function selectTeam(team) {
+        if (selectedTeam?.id === team.id) return;
+        setSelectedTeam(team);
+        setExpandedAgent(null);
+        setLoadingTeam(true);
+        try {
+            const perfRes = await fetchWithAuth(`/api/team/performance?team_id=${encodeURIComponent(team.id)}`);
+            setTeamAgents(perfRes.agents || []);
+        } catch (err) {
+            console.error('Failed to load team performance:', err);
+            setTeamAgents([]);
+        } finally {
+            setLoadingTeam(false);
+        }
+    }
+
+    function goBackToAll() {
+        setSelectedTeam(null);
+        setTeamAgents(null);
+        setExpandedAgent(null);
     }
 
     async function toggleAgentDetail(clerkId) {
@@ -85,7 +110,8 @@ export default function TeamDashboardPage({ userRole }) {
         );
     }
 
-    const agents = data.performance || data.agents || [];
+    // When a team is selected, show filtered agents; otherwise show all
+    const agents = selectedTeam ? (teamAgents || []) : (data.performance || data.agents || []);
 
     // Team summary stats
     const teamAvg = agents.length > 0
@@ -104,11 +130,23 @@ export default function TeamDashboardPage({ userRole }) {
             {/* Header */}
             <div className="page-header">
                 <div className="page-header-info">
+                    {selectedTeam && (
+                        <button className="btn-back-team" onClick={goBackToAll}>
+                            <ArrowLeft size={16} />
+                            All Teams
+                        </button>
+                    )}
                     <h1 className="page-title">
                         <Users size={22} />
-                        {userRole === 'manager' ? 'All Teams' : 'My Team'}
+                        {selectedTeam
+                            ? selectedTeam.name
+                            : (userRole === 'manager' ? 'All Teams' : 'My Team')}
                     </h1>
-                    <p className="page-subtitle">{agents.length} agents</p>
+                    <p className="page-subtitle">
+                        {selectedTeam
+                            ? `${selectedTeam.member_count} member${selectedTeam.member_count !== 1 ? 's' : ''}`
+                            : `${(data.performance || data.agents || []).length} agents`}
+                    </p>
                 </div>
             </div>
 
@@ -125,7 +163,7 @@ export default function TeamDashboardPage({ userRole }) {
                     <div className="kpi-card-icon kpi-icon--green"><TrendingUp size={20} /></div>
                     <div className="kpi-card-data">
                         <span className="kpi-card-value">{teamAvg}<small>/100</small></span>
-                        <span className="kpi-card-label">Team Avg Score</span>
+                        <span className="kpi-card-label">{selectedTeam ? 'Avg Score' : 'Team Avg Score'}</span>
                     </div>
                 </div>
                 <div className="kpi-card">
@@ -137,11 +175,15 @@ export default function TeamDashboardPage({ userRole }) {
                 </div>
             </div>
 
-            {/* Manager: Team overview cards */}
-            {userRole === 'manager' && data.teams && data.teams.length > 0 && (
+            {/* Manager: Team overview cards (only show when no team is selected) */}
+            {!selectedTeam && userRole === 'manager' && data.teams && data.teams.length > 0 && (
                 <div className="teams-card-grid">
                     {data.teams.map(team => (
-                        <div key={team.id} className="team-overview-card">
+                        <div
+                            key={team.id}
+                            className="team-overview-card team-overview-card--clickable"
+                            onClick={() => selectTeam(team)}
+                        >
                             <div className="team-overview-icon"><Users size={18} /></div>
                             <div className="team-overview-info">
                                 <h4>{team.name}</h4>
@@ -152,102 +194,142 @@ export default function TeamDashboardPage({ userRole }) {
                 </div>
             )}
 
+            {/* Loading state for team detail */}
+            {loadingTeam && (
+                <div className="page-loading" style={{ height: 'auto', padding: '60px 0' }}>
+                    <div className="loading-spinner" />
+                    <p>Loading team data…</p>
+                </div>
+            )}
+
             {/* Agent Performance Table with Drill-Down */}
-            <div className="dash-card">
-                <div className="dash-card-header">
-                    <h3><BarChart3 size={16} /> Agent Performance</h3>
-                </div>
-                <div className="dash-card-body" style={{ padding: 0 }}>
-                    {agents.length === 0 ? (
-                        <div className="empty-state" style={{ padding: '40px 20px' }}>
-                            <Users size={32} />
-                            <p>No agents found.</p>
-                        </div>
-                    ) : (
-                        <div className="agent-table">
-                            {/* Header */}
-                            <div className="agent-table-header">
-                                <span className="at-rank">#</span>
-                                <span className="at-name">Agent</span>
-                                <span className="at-team">Team</span>
-                                <span className="at-calls">Calls</span>
-                                <span className="at-score">Avg Score</span>
-                                <span className="at-perf">Performance</span>
-                                <span className="at-action"></span>
+            {!loadingTeam && (
+                <div className="dash-card">
+                    <div className="dash-card-header">
+                        <h3><BarChart3 size={16} /> {selectedTeam ? `${selectedTeam.name} — Agent Performance` : 'Agent Performance'}</h3>
+                    </div>
+                    <div className="dash-card-body" style={{ padding: 0 }}>
+                        {agents.length === 0 ? (
+                            <div className="team-empty-state">
+                                {selectedTeam ? (
+                                    <>
+                                        <div className="team-empty-icon">
+                                            <UserX size={36} />
+                                        </div>
+                                        <h4>No Activity for {selectedTeam.name}</h4>
+                                        <p>
+                                            {selectedTeam.member_count === 0
+                                                ? 'No agents have been assigned to this team yet.'
+                                                : 'No calls have been recorded for this team yet.'}
+                                        </p>
+                                        <div className="team-empty-stats">
+                                            <div className="team-empty-stat">
+                                                <span className="team-empty-stat-value">0</span>
+                                                <span className="team-empty-stat-label">Agents</span>
+                                            </div>
+                                            <div className="team-empty-stat">
+                                                <span className="team-empty-stat-value">0</span>
+                                                <span className="team-empty-stat-label">Total Calls</span>
+                                            </div>
+                                            <div className="team-empty-stat">
+                                                <span className="team-empty-stat-value">0</span>
+                                                <span className="team-empty-stat-label">Avg Score</span>
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Users size={32} />
+                                        <p>No agents found.</p>
+                                    </>
+                                )}
                             </div>
-
-                            {/* Rows */}
-                            {agents.map((agent, idx) => (
-                                <div key={agent.clerk_user_id}>
-                                    <div
-                                        className={`agent-table-row ${expandedAgent === agent.clerk_user_id ? 'expanded' : ''}`}
-                                        onClick={() => toggleAgentDetail(agent.clerk_user_id)}
-                                    >
-                                        <span className="at-rank">{idx + 1}</span>
-                                        <span className="at-name">
-                                            <div className="agent-avatar">
-                                                <User size={14} />
-                                            </div>
-                                            {agent.name}
-                                        </span>
-                                        <span className="at-team">{agent.team_id || '—'}</span>
-                                        <span className="at-calls">{agent.total_calls}</span>
-                                        <span className="at-score" style={{
-                                            color: getScoreColor(agent.avg_score),
-                                            fontWeight: 700
-                                        }}>
-                                            {agent.avg_score}
-                                        </span>
-                                        <span className="at-perf">
-                                            <div className="perf-bar-track">
-                                                <div
-                                                    className="perf-bar-fill"
-                                                    style={{
-                                                        width: `${Math.min(agent.avg_score, 100)}%`,
-                                                        background: getScoreColor(agent.avg_score),
-                                                    }}
-                                                />
-                                            </div>
-                                        </span>
-                                        <span className="at-action">
-                                            {expandedAgent === agent.clerk_user_id
-                                                ? <ChevronUp size={16} />
-                                                : <ChevronDown size={16} />}
-                                        </span>
-                                    </div>
-
-                                    {/* Agent Detail Panel */}
-                                    <AnimatePresence>
-                                        {expandedAgent === agent.clerk_user_id && (
-                                            <motion.div
-                                                className="agent-detail-panel"
-                                                initial={{ height: 0, opacity: 0 }}
-                                                animate={{ height: 'auto', opacity: 1 }}
-                                                exit={{ height: 0, opacity: 0 }}
-                                                transition={{ duration: 0.25 }}
-                                            >
-                                                {loadingAgent === agent.clerk_user_id ? (
-                                                    <div className="agent-detail-loading">
-                                                        <div className="loading-spinner small" />
-                                                        <span>Loading call records…</span>
-                                                    </div>
-                                                ) : (
-                                                    <AgentDetailContent
-                                                        agent={agent}
-                                                        data={agentCalls[agent.clerk_user_id]}
-                                                        navigate={navigate}
-                                                        getScoreColor={getScoreColor}
-                                                    />
-                                                )}
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
+                        ) : (
+                            <div className="agent-table">
+                                {/* Header */}
+                                <div className="agent-table-header">
+                                    <span className="at-rank">#</span>
+                                    <span className="at-name">Agent</span>
+                                    {!selectedTeam && <span className="at-team">Team</span>}
+                                    <span className="at-calls">Calls</span>
+                                    <span className="at-score">Avg Score</span>
+                                    <span className="at-perf">Performance</span>
+                                    <span className="at-action"></span>
                                 </div>
-                            ))}
-                        </div>
-                    )}
+
+                                {/* Rows */}
+                                {agents.map((agent, idx) => (
+                                    <div key={agent.clerk_user_id}>
+                                        <div
+                                            className={`agent-table-row ${expandedAgent === agent.clerk_user_id ? 'expanded' : ''}`}
+                                            onClick={() => toggleAgentDetail(agent.clerk_user_id)}
+                                        >
+                                            <span className="at-rank">{idx + 1}</span>
+                                            <span className="at-name">
+                                                <div className="agent-avatar">
+                                                    <User size={14} />
+                                                </div>
+                                                {agent.name}
+                                            </span>
+                                            {!selectedTeam && <span className="at-team">{agent.team_id || '—'}</span>}
+                                            <span className="at-calls">{agent.total_calls}</span>
+                                            <span className="at-score" style={{
+                                                color: getScoreColor(agent.avg_score),
+                                                fontWeight: 700
+                                            }}>
+                                                {agent.avg_score}
+                                            </span>
+                                            <span className="at-perf">
+                                                <div className="perf-bar-track">
+                                                    <div
+                                                        className="perf-bar-fill"
+                                                        style={{
+                                                            width: `${Math.min(agent.avg_score, 100)}%`,
+                                                            background: getScoreColor(agent.avg_score),
+                                                        }}
+                                                    />
+                                                </div>
+                                            </span>
+                                            <span className="at-action">
+                                                {expandedAgent === agent.clerk_user_id
+                                                    ? <ChevronUp size={16} />
+                                                    : <ChevronDown size={16} />}
+                                            </span>
+                                        </div>
+
+                                        {/* Agent Detail Panel */}
+                                        <AnimatePresence>
+                                            {expandedAgent === agent.clerk_user_id && (
+                                                <motion.div
+                                                    className="agent-detail-panel"
+                                                    initial={{ height: 0, opacity: 0 }}
+                                                    animate={{ height: 'auto', opacity: 1 }}
+                                                    exit={{ height: 0, opacity: 0 }}
+                                                    transition={{ duration: 0.25 }}
+                                                >
+                                                    {loadingAgent === agent.clerk_user_id ? (
+                                                        <div className="agent-detail-loading">
+                                                            <div className="loading-spinner small" />
+                                                            <span>Loading call records…</span>
+                                                        </div>
+                                                    ) : (
+                                                        <AgentDetailContent
+                                                            agent={agent}
+                                                            data={agentCalls[agent.clerk_user_id]}
+                                                            navigate={navigate}
+                                                            getScoreColor={getScoreColor}
+                                                        />
+                                                    )}
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
-            </div>
+            )}
         </motion.div>
     );
 }

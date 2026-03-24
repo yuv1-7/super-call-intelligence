@@ -183,6 +183,25 @@ async def get_call_detail(call_id: int, request: Request):
     return call
 
 
+@app.delete("/api/calls/{call_id}")
+async def delete_call_endpoint(call_id: int, request: Request):
+    """Delete a call and its evaluation. Agents can only delete their own."""
+    if not _db_ready:
+        return JSONResponse({"error": "Database not configured"}, status_code=503)
+
+    from middleware.auth import get_current_user
+    from db.queries import delete_call
+    user = await get_current_user(request)
+    deleted = await delete_call(
+        call_id=call_id,
+        agent_id=user["clerk_user_id"],
+        role=user["role"],
+    )
+    if not deleted:
+        return JSONResponse({"error": "Call not found or access denied"}, status_code=404)
+    return {"success": True}
+
+
 @app.get("/api/evaluations/summary")
 async def get_eval_summary(request: Request):
     """Get aggregate evaluation stats for the current user's scope."""

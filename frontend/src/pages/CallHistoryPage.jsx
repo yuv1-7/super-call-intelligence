@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApi } from '../hooks/useApi.js';
-import { Search, Filter, ChevronLeft, ChevronRight, Clock, Award } from 'lucide-react';
+import { Search, Filter, ChevronLeft, ChevronRight, Clock, Award, Trash2 } from 'lucide-react';
 
 export default function CallHistoryPage({ userRole }) {
     const navigate = useNavigate();
@@ -12,6 +12,7 @@ export default function CallHistoryPage({ userRole }) {
     const [loading, setLoading] = useState(true);
     const [offset, setOffset] = useState(0);
     const [filterType, setFilterType] = useState('all');
+    const [deletingId, setDeletingId] = useState(null);
     const limit = 20;
 
     useEffect(() => {
@@ -47,6 +48,21 @@ export default function CallHistoryPage({ userRole }) {
         return '#ef4444';
     }
 
+    async function handleDelete(e, callId) {
+        e.stopPropagation();
+        if (!window.confirm('Delete this call log? This cannot be undone.')) return;
+        setDeletingId(callId);
+        try {
+            await fetchWithAuth(`/api/calls/${callId}`, { method: 'DELETE' });
+            setCalls(prev => prev.filter(c => c.id !== callId));
+        } catch (err) {
+            console.error('Failed to delete call:', err);
+            alert('Failed to delete call. Please try again.');
+        } finally {
+            setDeletingId(null);
+        }
+    }
+
     return (
         <div className="history-page">
             <div className="history-header">
@@ -79,7 +95,7 @@ export default function CallHistoryPage({ userRole }) {
             ) : (
                 <>
                     <div className="calls-table">
-                        <div className="calls-row header">
+                        <div className={`calls-row header ${userRole !== 'agent' ? 'with-agent' : ''}`}>
                             <span>Date</span>
                             <span>Intent</span>
                             {userRole !== 'agent' && <span>Agent</span>}
@@ -87,11 +103,12 @@ export default function CallHistoryPage({ userRole }) {
                             <span>Policy</span>
                             <span>Score</span>
                             <span>Grade</span>
+                            <span></span>
                         </div>
                         {calls.map(call => (
                             <div
                                 key={call.id}
-                                className="calls-row clickable"
+                                className={`calls-row clickable ${userRole !== 'agent' ? 'with-agent' : ''}`}
                                 onClick={() => navigate(`/history/${call.id}`)}
                             >
                                 <span className="call-date">
@@ -112,6 +129,16 @@ export default function CallHistoryPage({ userRole }) {
                                 </span>
                                 <span className="call-grade" style={{ color: getScoreColor(call.overall_score) }}>
                                     {call.grade || '—'}
+                                </span>
+                                <span className="call-delete-col" onClick={e => e.stopPropagation()}>
+                                    <button
+                                        className="btn-delete-call"
+                                        onClick={e => handleDelete(e, call.id)}
+                                        disabled={deletingId === call.id}
+                                        title="Delete call"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
                                 </span>
                             </div>
                         ))}

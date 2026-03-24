@@ -622,6 +622,22 @@ async def upsert_user(clerk_user_id: str, name: str, email: str, role: str = "ag
 # DEV / ADMIN QUERIES
 # ══════════════════════════════════════════════
 
+async def delete_call(call_id: int, agent_id: str, role: str) -> bool:
+    """Delete a single call (and its evaluation via CASCADE).
+    Agents can only delete their own calls; leads/managers can delete any."""
+    pool = get_pool()
+    if role == "agent":
+        result = await pool.execute(
+            "DELETE FROM calls WHERE id = $1 AND agent_id = $2",
+            call_id, agent_id
+        )
+    else:
+        result = await pool.execute("DELETE FROM calls WHERE id = $1", call_id)
+    deleted = int(result.split()[-1])
+    logger.info(f"🗑️ Deleted call {call_id} (rows={deleted})")
+    return deleted > 0
+
+
 async def clear_call_history() -> int:
     """Delete all calls and their evaluations. Returns count of deleted calls."""
     pool = get_pool()
@@ -629,6 +645,21 @@ async def clear_call_history() -> int:
     count = int(result.split()[-1])
     logger.info(f"🗑️ Cleared {count} call records")
     return count
+async def delete_call(call_id: int, agent_id: str, role: str) -> bool:
+    """Delete a single call (and its evaluation via CASCADE).
+    Agents can only delete their own calls; leads/managers can delete any."""
+    pool = get_pool()
+    if role == "agent":
+        result = await pool.execute(
+            "DELETE FROM calls WHERE id = $1 AND agent_id = $2",
+            call_id, agent_id
+        )
+    else:
+        result = await pool.execute("DELETE FROM calls WHERE id = $1", call_id)
+    deleted = int(result.split()[-1])
+    logger.info(f"🗑️ Deleted call {call_id} (rows={deleted})")
+    return deleted > 0
+
 
 
 async def clear_evaluations() -> int:
