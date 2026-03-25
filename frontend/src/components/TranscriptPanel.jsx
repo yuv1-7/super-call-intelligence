@@ -10,7 +10,11 @@ export default function TranscriptPanel({ transcripts, callActive, isListening }
 
     useEffect(() => {
         const timer = setTimeout(() => {
-            bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            if (bottomRef.current) {
+                const parent = bottomRef.current.parentElement;
+                // scroll the specific container, avoids scrolling the entire app layout
+                parent.scrollTop = parent.scrollHeight;
+            }
         }, 100);
         return () => clearTimeout(timer);
     }, [transcripts]);

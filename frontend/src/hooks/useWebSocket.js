@@ -94,7 +94,7 @@ export function useWebSocket(url) {
                 speaker: entry.speaker || '',
                 timestamp: entry.timestamp || '',
                 offset: entry.offset,
-                id: Date.now(),
+                id: `${entry.speaker}-${entry.offset}-partial`,
             }];
         });
     }, []);
