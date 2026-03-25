@@ -1,10 +1,5 @@
-// pages/CallPage.jsx — Active call interface with fixed post-call layout
-
-import { useState, useCallback, useEffect } from 'react';
-import { useWebSocket } from '../hooks/useWebSocket.js';
-import { useDeepgramSpeech } from '../hooks/useSpeechRecognition.js';
-import { useAuth } from '@clerk/clerk-react';
 import { motion } from 'framer-motion';
+import { useCall } from '../context/CallContext.jsx';
 import TranscriptPanel from '../components/TranscriptPanel.jsx';
 import MemberCard from '../components/MemberCard.jsx';
 import KnowledgeCard from '../components/KnowledgeCard.jsx';
@@ -13,93 +8,12 @@ import SuggestionCard from '../components/SuggestionCard.jsx';
 import PostCallCard from '../components/PostCallCard.jsx';
 import FNOLFormCard from '../components/FNOLFormCard.jsx';
 
-const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const WS_URL = import.meta.env.DEV
-    ? `ws://${window.location.hostname}:8000/stream`
-    : `${protocol}//${window.location.host}/stream`;
-
 export default function CallPage() {
-    const { userId } = useAuth();
-    const [callActive, setCallActive] = useState(false);
-    const [showEvaluation, setShowEvaluation] = useState(false);
-    const [postCallTab, setPostCallTab] = useState(0);
-
     const {
-        isConnected, isProcessing, processingMessage,
-        transcripts, addTranscript, memberProfile, memberLookupStatus, knowledgeDocs, complianceAlerts,
-        suggestion, intent, postCallEvaluation,
-        sendMessage, sendRawMessage, endCall, resetState,
-    } = useWebSocket(WS_URL);
-
-    useEffect(() => {
-        if (isConnected && userId && sendRawMessage) {
-            sendRawMessage({ type: 'auth', clerk_user_id: userId });
-        }
-    }, [isConnected, userId, sendRawMessage]);
-
-    const onTranscript = useCallback(
-        (event) => {
-            // Map channel index to speaker label (same as backend _map_speaker)
-            const speakerLabel = event.speaker === '0' ? 'Agent' : event.speaker === '1' ? 'Customer' : `Speaker ${event.speaker}`;
-            const offset = event.offset || 0;
-            const h = Math.floor(offset / 3600);
-            const m = Math.floor((offset % 3600) / 60);
-            const s = Math.floor(offset % 60);
-            const timestamp = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-
-            // Display instantly from Deepgram (don't wait for backend echo)
-            addTranscript({
-                text: event.text,
-                is_finalized: event.isFinal,
-                speaker: speakerLabel,
-                timestamp,
-                offset,
-            });
-
-            // Still send to backend for AI processing
-            sendMessage(event.text, event.isFinal, event.speaker, event.offset, event.languages || []);
-        },
-        [sendMessage, addTranscript]
-    );
-
-    const { isListening, error: speechError, toggleListening } = useDeepgramSpeech({ onTranscript });
-
-    const handleStartCall = () => {
-        resetState();
-        setCallActive(true);
-        setShowEvaluation(false);
-        setTimeout(() => toggleListening(), 300);
-    };
-
-    const handleEndCall = () => {
-        if (isListening) toggleListening();
-        endCall();
-        setCallActive(false);
-        setShowEvaluation(true);
-    };
-
-    const handleNewCall = () => {
-        resetState();
-        setCallActive(false);
-        setShowEvaluation(false);
-        setPostCallTab(0);
-    };
-
-    const statusText = isListening
-        ? '🔴 Live — Listening'
-        : isProcessing
-            ? processingMessage || 'Processing...'
-            : isConnected
-                ? 'Ready'
-                : 'Disconnected';
-
-    const statusClass = isListening
-        ? 'live'
-        : isProcessing
-            ? 'processing'
-            : isConnected
-                ? 'connected'
-                : 'disconnected';
+        callActive, showEvaluation, postCallTab, setPostCallTab,
+        transcripts, memberProfile, memberLookupStatus, knowledgeDocs, complianceAlerts,
+        suggestion, postCallEvaluation, error: speechError, isListening
+    } = useCall();
 
     // Post-call evaluation view — full-width, replaces call content
     if (showEvaluation && postCallEvaluation) {
@@ -109,18 +23,6 @@ export default function CallPage() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
             >
-                {/* Controls */}
-                <div className="call-controls-bar">
-                    <div className="call-status-group">
-                        <span className="status-badge status-badge--complete">Call Complete</span>
-                    </div>
-                    <div className="call-buttons-group">
-                        <button className="btn-primary" onClick={handleNewCall}>
-                            🔄 New Call
-                        </button>
-                    </div>
-                </div>
-
                 {/* Post-Call Content — full width, properly tabbed */}
                 <div className="postcall-container">
                     <div className="postcall-tabs">
@@ -146,49 +48,15 @@ export default function CallPage() {
         );
     }
 
-    // Active call / pre-call view
+    // Active call view
     return (
         <div className="call-page">
-            {/* Call Controls Bar */}
-            <div className="call-controls-bar">
-                <div className="call-status-group">
-                    {intent && (
-                        <span className={`intent-badge ${intent.intent}`}>
-                            {intent.intent?.replace(/_/g, ' ')}
-                        </span>
-                    )}
-                    <span className={`status-dot ${statusClass}`} />
-                    <span className="status-text">{statusText}</span>
-                </div>
-                <div className="call-buttons-group">
-                    {!callActive && !showEvaluation && (
-                        <button className="btn-call btn-call--start" onClick={handleStartCall} disabled={!isConnected}>
-                            📞 Start Call
-                        </button>
-                    )}
-                    {callActive && (
-                        <>
-                            <button
-                                className={`btn-mic ${isListening ? 'active' : ''}`}
-                                onClick={toggleListening}
-                                title={isListening ? 'Mute' : 'Unmute'}
-                            >
-                                {isListening ? '🎙️' : '🔇'}
-                            </button>
-                            <button className="btn-call btn-call--end" onClick={handleEndCall}>
-                                ⏹ End Call
-                            </button>
-                        </>
-                    )}
-                </div>
-            </div>
-
             {/* Main Call Content */}
             <div className="call-content">
                 <TranscriptPanel transcripts={transcripts} callActive={callActive} isListening={isListening} />
 
                 <main className="cards-area">
-                    <SuggestionCard suggestion={suggestion} isProcessing={isProcessing} />
+                    <SuggestionCard suggestion={suggestion} />
                     <div className="cards-scroll">
                         <div className="cards-row">
                             <KnowledgeCard docs={knowledgeDocs} />

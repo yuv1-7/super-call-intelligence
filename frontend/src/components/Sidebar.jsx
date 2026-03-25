@@ -1,7 +1,4 @@
-// components/Sidebar.jsx — Premium redesigned sidebar with smooth collapse
-
 import { useLocation, useNavigate } from 'react-router-dom';
-import { UserButton } from '@clerk/clerk-react';
 import {
     LayoutDashboard, Phone, History, Users, Shield, Settings,
     ChevronLeft, ChevronRight
@@ -31,15 +28,6 @@ export default function Sidebar({ userRole, collapsed, onToggle }) {
 
     return (
         <nav className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
-            {/* Brand */}
-            <div className="sidebar-brand" onClick={() => navigate('/')}>
-                <img src="/logo.png" alt="CallIQ" className="sidebar-logo" />
-                <div className="sidebar-brand-text">
-                    <span className="sidebar-title">CallIQ</span>
-                    <span className="sidebar-subtitle">Intelligence</span>
-                </div>
-            </div>
-
             {/* Toggle */}
             <button
                 className="sidebar-collapse-btn"
@@ -72,16 +60,6 @@ export default function Sidebar({ userRole, collapsed, onToggle }) {
                 })}
             </div>
 
-            {/* Footer */}
-            <div className="sidebar-footer">
-                <div className="sidebar-role-badge" title={roleLabel}>
-                    <span className="sidebar-role-icon">{roleIcon}</span>
-                    <span className="sidebar-role-text">{roleLabel}</span>
-                </div>
-                <div className="sidebar-user-btn">
-                    <UserButton />
-                </div>
-            </div>
         </nav>
     );
 }

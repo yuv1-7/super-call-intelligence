@@ -1,0 +1,97 @@
+import { useNavigate } from 'react-router-dom';
+import { UserButton } from '@clerk/clerk-react';
+import { useCall } from '../context/CallContext.jsx';
+
+export default function GlobalHeader({ userRole }) {
+    const navigate = useNavigate();
+    const {
+        isConnected, isProcessing, processingMessage, isListening,
+        callActive, showEvaluation, intent,
+        handleStartCall, handleEndCall, handleNewCall, toggleListening
+    } = useCall();
+
+    const statusText = isListening ? '🔴 Live — Listening' : isProcessing ? processingMessage || 'Processing...' : isConnected ? 'Ready' : 'Disconnected';
+    const statusClass = isListening ? 'live' : isProcessing ? 'processing' : isConnected ? 'connected' : 'disconnected';
+
+    const roleLabel = (userRole || 'agent').replace('_', ' ');
+    const roleIcon = userRole === 'manager' ? '👔' : userRole === 'team_lead' ? '👥' : '🎧';
+
+    return (
+        <header className="global-header">
+            {/* Left Box: Logo + Status */}
+            <div className="global-header-left">
+                <div className="global-header-brand" onClick={() => navigate('/')}>
+                    <img src="/logo.png" alt="CallIQ" className="global-header-logo" />
+                    <div className="global-header-text">
+                        <span className="global-header-title">CallIQ</span>
+                        <span className="global-header-subtitle">Intelligence</span>
+                    </div>
+                </div>
+
+                <div className="global-header-divider" />
+
+                <div className="global-header-status">
+                    {showEvaluation ? (
+                        <div className="call-status-group">
+                            <span className="status-badge status-badge--complete">Call Complete</span>
+                        </div>
+                    ) : (
+                        <div className="call-status-group">
+                            {intent && (
+                                <span className={`intent-badge ${intent.intent}`}>
+                                    {intent.intent?.replace(/_/g, ' ')}
+                                </span>
+                            )}
+                            <span className={`status-dot ${statusClass}`} />
+                            <span className="status-text">{statusText}</span>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Right Box: Actions + Profile */}
+            <div className="global-header-right">
+                <div className="global-header-actions">
+                    {showEvaluation ? (
+                        <div className="call-buttons-group">
+                            <button className="btn-primary" onClick={handleNewCall}>
+                                🔄 New Call
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="call-buttons-group">
+                            {!callActive && (
+                                <button className="btn-call btn-call--start" onClick={handleStartCall} disabled={!isConnected}>
+                                    📞 Start Call
+                                </button>
+                            )}
+                            {callActive && (
+                                <>
+                                    <button
+                                        className={`btn-mic ${isListening ? 'active' : ''}`}
+                                        onClick={toggleListening}
+                                        title={isListening ? 'Mute' : 'Unmute'}
+                                    >
+                                        {isListening ? '🎙️' : '🔇'}
+                                    </button>
+                                    <button className="btn-call btn-call--end" onClick={handleEndCall}>
+                                        ⏹ End Call
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                <div className="global-header-divider" />
+
+                <div className="header-role-badge" title={roleLabel}>
+                    <span className="header-role-icon">{roleIcon}</span>
+                    <span className="header-role-text">{roleLabel}</span>
+                </div>
+
+                <UserButton />
+            </div>
+        </header>
+    );
+}

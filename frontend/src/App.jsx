@@ -1,5 +1,3 @@
-// App.jsx — Router shell with role-based navigation (redesigned)
-
 import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { SignedIn, SignedOut, useAuth, useUser } from '@clerk/clerk-react';
@@ -14,6 +12,8 @@ import CallHistoryPage from './pages/CallHistoryPage.jsx';
 import CallDetailPage from './pages/CallDetailPage.jsx';
 import TeamDashboardPage from './pages/TeamDashboardPage.jsx';
 import DevPage from './pages/DevPage.jsx';
+import { CallProvider } from './context/CallContext.jsx';
+import GlobalHeader from './components/GlobalHeader.jsx';
 
 export default function App() {
     const { isSignedIn } = useAuth();
@@ -41,34 +41,39 @@ export default function App() {
                 <LoginPage />
             </SignedOut>
             <SignedIn>
-                <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-                    <Sidebar
-                        userRole={userRole}
-                        collapsed={sidebarCollapsed}
-                        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
-                    />
-                    <main className="app-main">
-                        <AnimatePresence mode="wait">
-                            <Routes>
-                                <Route path="/" element={
-                                    <DashboardPage userRole={userRole} userName={userName} />
-                                } />
-                                <Route path="/call" element={<CallPage />} />
-                                <Route path="/history" element={
-                                    <CallHistoryPage userRole={userRole} />
-                                } />
-                                <Route path="/history/:id" element={<CallDetailPage />} />
-                                <Route path="/team" element={
-                                    userRole === 'agent'
-                                        ? <Navigate to="/" replace />
-                                        : <TeamDashboardPage userRole={userRole} />
-                                } />
-                                <Route path="/dev" element={<DevPage />} />
-                                <Route path="*" element={<Navigate to="/" replace />} />
-                            </Routes>
-                        </AnimatePresence>
-                    </main>
-                </div>
+                <CallProvider>
+                    <div className="global-layout">
+                        <GlobalHeader userRole={userRole} />
+                        <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+                            <Sidebar
+                                userRole={userRole}
+                                collapsed={sidebarCollapsed}
+                                onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+                            />
+                            <main className="app-main">
+                                <AnimatePresence mode="wait">
+                                    <Routes>
+                                        <Route path="/" element={
+                                            <DashboardPage userRole={userRole} userName={userName} />
+                                        } />
+                                        <Route path="/call" element={<CallPage />} />
+                                        <Route path="/history" element={
+                                            <CallHistoryPage userRole={userRole} />
+                                        } />
+                                        <Route path="/history/:id" element={<CallDetailPage />} />
+                                        <Route path="/team" element={
+                                            userRole === 'agent'
+                                                ? <Navigate to="/" replace />
+                                                : <TeamDashboardPage userRole={userRole} />
+                                        } />
+                                        <Route path="/dev" element={<DevPage />} />
+                                        <Route path="*" element={<Navigate to="/" replace />} />
+                                    </Routes>
+                                </AnimatePresence>
+                            </main>
+                        </div>
+                    </div>
+                </CallProvider>
             </SignedIn>
         </>
     );

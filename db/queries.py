@@ -343,6 +343,40 @@ async def get_call_with_evaluation(call_id: int, agent_id: str | None = None, te
     return call
 
 
+async def delete_call(call_id: int, agent_id: str | None = None, team_id: str | None = None, role: str = "agent") -> bool:
+    """Delete a call record, respecting role access."""
+    pool = get_pool()
+
+    # Verify access first
+    row = await pool.fetchrow(
+        """
+        SELECT c.agent_id, u.team_id
+        FROM calls c
+        JOIN users u ON c.agent_id = u.clerk_user_id
+        WHERE c.id = $1
+        """,
+        call_id
+    )
+    if not row:
+        return False
+
+    can_delete = False
+    if role == "manager":
+        can_delete = True
+    elif role == "team_lead" and row["team_id"] == team_id:
+        can_delete = True
+    elif role == "agent" and row["agent_id"] == agent_id:
+        can_delete = True
+
+    if not can_delete:
+        logger.warning(f"🚫 Unauthorized delete attempt for call #{call_id} by {agent_id} (role: {role})")
+        return False
+
+    await pool.execute("DELETE FROM calls WHERE id = $1", call_id)
+    logger.info(f"🗑️ Deleted call #{call_id}")
+    return True
+
+
 def _eval_row_to_dict(row) -> dict:
     """Convert an evaluations DB row to a JSON-serializable dict."""
     def _parse(val):
@@ -645,20 +679,7 @@ async def clear_call_history() -> int:
     count = int(result.split()[-1])
     logger.info(f"🗑️ Cleared {count} call records")
     return count
-async def delete_call(call_id: int, agent_id: str, role: str) -> bool:
-    """Delete a single call (and its evaluation via CASCADE).
-    Agents can only delete their own calls; leads/managers can delete any."""
-    pool = get_pool()
-    if role == "agent":
-        result = await pool.execute(
-            "DELETE FROM calls WHERE id = $1 AND agent_id = $2",
-            call_id, agent_id
-        )
-    else:
-        result = await pool.execute("DELETE FROM calls WHERE id = $1", call_id)
-    deleted = int(result.split()[-1])
-    logger.info(f"🗑️ Deleted call {call_id} (rows={deleted})")
-    return deleted > 0
+
 
 
 

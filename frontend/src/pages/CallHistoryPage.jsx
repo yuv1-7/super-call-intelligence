@@ -35,6 +35,22 @@ export default function CallHistoryPage({ userRole }) {
         }
     }
 
+    async function deleteCall(callId, e) {
+        e.stopPropagation();
+        if (!window.confirm('Are you sure you want to delete this call record and its evaluation? This action cannot be undone.')) {
+            return;
+        }
+
+        try {
+            await fetchWithAuth(`/api/calls/${callId}`, { method: 'DELETE' });
+            // Remove from local state
+            setCalls(prev => prev.filter(c => c.id !== callId));
+        } catch (err) {
+            console.error('Failed to delete call:', err);
+            alert('Failed to delete call. Please try again.');
+        }
+    }
+
     function formatDuration(secs) {
         if (!secs) return '—';
         const m = Math.floor(secs / 60);
