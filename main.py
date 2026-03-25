@@ -352,6 +352,7 @@ async def stream_endpoint(websocket: WebSocket):
     last_knowledge_docs: list[dict] = []
     last_compliance_alerts: list[dict] = []  # Track pre-fetched compliance alerts
     intent_stable_count: int = 0  # Counter for early-exit intent classification
+    utterance_count: int = 0  # Total finalized customer utterances for periodic re-classification
     ws_alive = True  # Track WebSocket connection state
     agent_clerk_id: str | None = None  # Clerk user ID for the agent on this call
     last_searched_claim_type: str | None = None  # Track when claim type changes to re-search KB
@@ -442,6 +443,7 @@ async def stream_endpoint(websocket: WebSocket):
                 last_compliance_alerts = []
                 accumulated_facts = {}
                 intent_stable_count = 0
+                utterance_count = 0
                 last_searched_claim_type = None
                 ws_alive = True
                 continue
@@ -566,30 +568,53 @@ async def stream_endpoint(websocket: WebSocket):
                         facts_context = "Previously extracted facts: " + "; ".join(known_facts) + "\n\n"
                 windowed_transcript_with_context = facts_context + windowed_transcript
 
-                # ── Phase 1: Intent classification (+ early-exit optimization) ──
-                if intent_stable_count < 3:
+                # ── Phase 1: Intent classification (+ early-exit with periodic re-check) ──
+                utterance_count += 1
+                should_classify = (
+                    intent_stable_count < 3  # Not yet stabilized
+                    or utterance_count % 10 == 0  # Periodic re-check every 10th utterance
+                )
+
+                if should_classify:
                     intent_res = await classify_intent(formatted_transcript)
                     new_intent = intent_res.get("intent")
                     new_claim_type = intent_res.get("claim_type")
                     
-                    # Track intent stability for early-exit
-                    if new_intent == detected_intent:
-                        intent_stable_count += 1
-                    else:
-                        intent_stable_count = 1  # Reset on change
-                    
-                    detected_intent = new_intent
-                    claim_type = new_claim_type
-                    
-                    # Re-search KB when claim type changes
-                    if claim_type and claim_type != last_searched_claim_type:
-                        proactive_kb_sent = False
-                        logger.info(f"📚 Claim type changed to '{claim_type}' — will re-search knowledge base")
-                    
                     if intent_stable_count >= 3:
-                        logger.info(f"🎯 Intent stabilized as '{detected_intent}' — skipping future classification")
+                        # Re-check after stabilization: only act if intent actually changed
+                        if new_intent != detected_intent:
+                            logger.info(
+                                f"Intent changed from '{detected_intent}' to '{new_intent}' "
+                                f"at utterance {utterance_count} -- re-engaging classification"
+                            )
+                            intent_stable_count = 1
+                            detected_intent = new_intent
+                            claim_type = new_claim_type
+                            proactive_kb_sent = False  # Force KB re-search for new topic
+                        else:
+                            logger.info(
+                                f"Periodic re-check at utterance {utterance_count}: "
+                                f"intent unchanged ('{detected_intent}')"
+                            )
+                    else:
+                        # Normal stabilization tracking
+                        if new_intent == detected_intent:
+                            intent_stable_count += 1
+                        else:
+                            intent_stable_count = 1
+                        
+                        detected_intent = new_intent
+                        claim_type = new_claim_type
+                        
+                        # Re-search KB when claim type changes
+                        if claim_type and claim_type != last_searched_claim_type:
+                            proactive_kb_sent = False
+                            logger.info(f"Claim type changed to '{claim_type}' -- will re-search knowledge base")
+                        
+                        if intent_stable_count >= 3:
+                            logger.info(f"Intent stabilized as '{detected_intent}' -- will re-check every 10th utterance")
                 else:
-                    logger.info(f"🎯 Skipping intent classification (stable: {detected_intent})")
+                    logger.info(f"Skipping intent classification (stable: {detected_intent}, utterance #{utterance_count})")
 
                 # ── Phase 2: Fact extraction, knowledge search, and compliance — in parallel ──
                 parallel_tasks = [
@@ -734,9 +759,11 @@ async def stream_endpoint(websocket: WebSocket):
                     "messages": []  # Empty on start, populated by graph iteratively
                 }
 
-                # Clear the previous suggestion on the frontend just before starting the new stream
+                # Mark the previous suggestion as stale so the frontend greys it out
+                # instead of flashing to empty. The frontend will replace it when
+                # the first suggestion_chunk of the new stream arrives.
                 await safe_send(websocket, {
-                    "type": "clear_suggestion",
+                    "type": "suggestion_stale",
                     "data": {},
                 })
 
@@ -862,7 +889,7 @@ def _format_timestamp(seconds_value) -> str:
     
     Also handles legacy Azure tick format (large integers > 10000) for backward compatibility.
     """
-    if not seconds_value:
+    if seconds_value is None:
         return "00:00:00"
     total_seconds = float(seconds_value)
     # Legacy Azure tick detection: values > 10000 are likely 100-nanosecond ticks

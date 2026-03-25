@@ -4,8 +4,10 @@
 # with OData filtering by insurance_type to prevent cross-domain contamination.
 
 import os
+import re as _re
 import logging
 import functools
+from collections import OrderedDict
 from typing import Optional
 
 logger = logging.getLogger("call-intelligence")
@@ -25,7 +27,7 @@ MIN_SEARCH_SCORE = 0.01
 # ─── Module-level singletons ─── #
 _search_client = None
 _embedding_model = None
-_embedding_cache: dict[str, list[float]] = {}  # In-memory cache for query embeddings
+_embedding_cache: OrderedDict[str, list[float]] = OrderedDict()  # LRU cache for query embeddings
 
 # ─── Insurance Type Filter Mapping ─── #
 # Maps the claim_type from intent classification to the insurance_type values
@@ -125,9 +127,10 @@ def _embed_query(text: str) -> list[float]:
 
     result = embedding[0].cpu().numpy().tolist()
 
-    # Cache the result (cap cache size to prevent unbounded memory growth)
-    if len(_embedding_cache) < 64:
-        _embedding_cache[text] = result
+    # LRU cache: evict oldest if full, then store
+    if len(_embedding_cache) >= 64:
+        _embedding_cache.popitem(last=False)  # Remove oldest entry
+    _embedding_cache[text] = result
 
     return result
 
@@ -279,6 +282,33 @@ def search_knowledge(
         return []
 
 
+# Regex to detect severity keywords in compliance document content
+_SEVERITY_PATTERN = _re.compile(
+    r'\b(CRITICAL|critical|HIGH|high|MEDIUM|medium|LOW|low)\b'
+    r'|\*\*(CRITICAL|HIGH|MEDIUM|LOW)\*\*'
+    r'|\[(CRITICAL|HIGH|MEDIUM|LOW)\]'
+    r'|Severity:\s*(CRITICAL|HIGH|MEDIUM|LOW)',
+    _re.IGNORECASE,
+)
+
+
+def _parse_severity(content: str, title: str = "") -> str:
+    """Extract severity level from compliance document content or title.
+
+    Searches for keywords like 'CRITICAL', 'High', 'Medium', 'Low' in the
+    document text.  Returns the first match (normalised to lowercase).
+    Falls back to 'medium' when no keyword is found.
+    """
+    for text in (title, content):
+        match = _SEVERITY_PATTERN.search(text)
+        if match:
+            # match groups: pick the first non-None group
+            severity = next((g for g in match.groups() if g), None)
+            if severity:
+                return severity.lower()
+    return "medium"  # Safe default when severity is not specified
+
+
 def get_compliance_alerts(intent: str, transcript: str) -> list[dict]:
     """
     Search for compliance rules relevant to the current call.
@@ -318,11 +348,13 @@ def get_compliance_alerts(intent: str, transcript: str) -> list[dict]:
             if score < MIN_SEARCH_SCORE:
                 continue
 
+            doc_content = result.get("content", "")
+            doc_title = result.get("title", "")
             alerts.append({
-                "title": result.get("title", ""),
-                "content": result.get("content", ""),
+                "title": doc_title,
+                "content": doc_content,
                 "section_heading": result.get("section_heading", ""),
-                "severity": "HIGH",
+                "severity": _parse_severity(doc_content, doc_title),
                 "document_id": result.get("document_id", ""),
                 "source_document": result.get("source_document", ""),
             })

@@ -6,9 +6,13 @@ export default function GlobalHeader({ userRole }) {
     const navigate = useNavigate();
     const {
         isConnected, isProcessing, processingMessage, isListening,
-        callActive, showEvaluation, intent,
+        callActive, showEvaluation, intent, callElapsed,
         handleStartCall, handleEndCall, handleNewCall, toggleListening
     } = useCall();
+
+    const timerStr = callActive
+        ? `${String(Math.floor(callElapsed / 60)).padStart(2, '0')}:${String(callElapsed % 60).padStart(2, '0')}`
+        : null;
 
     const statusText = isListening ? '🔴 Live — Listening' : isProcessing ? processingMessage || 'Processing...' : isConnected ? 'Ready' : 'Disconnected';
     const statusClass = isListening ? 'live' : isProcessing ? 'processing' : isConnected ? 'connected' : 'disconnected';
@@ -44,6 +48,9 @@ export default function GlobalHeader({ userRole }) {
                             )}
                             <span className={`status-dot ${statusClass}`} />
                             <span className="status-text">{statusText}</span>
+                            {timerStr && (
+                                <span className="call-timer" title="Call duration">{timerStr}</span>
+                            )}
                         </div>
                     )}
                 </div>

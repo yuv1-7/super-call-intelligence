@@ -459,10 +459,12 @@ async def generate_post_call_evaluation(
         for line in transcript_lines
     )
 
-    # Instant FNOL scoring
-    fnol_result = calculate_fnol_completeness(accumulated_facts, claim_type)
+    # FNOL scoring is pure Python (instant). Run it in parallel with the
+    # rubric LLM call so it doesn't add to wall-clock time.
+    async def _fnol_async():
+        return calculate_fnol_completeness(accumulated_facts, claim_type)
 
-    # Step 1: Run rubric scoring first to get the actual score
+    fnol_task = asyncio.ensure_future(_fnol_async())
     rubric_result = await _run_agent_rubric(
         formatted_transcript=formatted_transcript,
         call_duration=call_duration,
@@ -471,6 +473,7 @@ async def generate_post_call_evaluation(
         claim_type=claim_type,
         accumulated_facts=accumulated_facts,
     )
+    fnol_result = await fnol_task
 
     # Extract the 7 sections and compute normalized score (max = 110 pts → percentage)
     extracted_sections = [

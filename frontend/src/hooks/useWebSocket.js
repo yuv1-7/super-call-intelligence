@@ -22,6 +22,13 @@ export function useWebSocket(url) {
 
     const wsRef = useRef(null);
     const reconnectTimerRef = useRef(null);
+    const suggestionStaleRef = useRef(false);  // Track whether current suggestion is stale (being replaced)
+    const memberProfileRef = useRef(null);     // Ref to track latest memberProfile (avoids stale closure in handleMessage)
+
+    // Keep ref in sync with state so handleMessage always reads the live value
+    useEffect(() => {
+        memberProfileRef.current = memberProfile;
+    }, [memberProfile]);
 
     const connect = useCallback(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -114,7 +121,7 @@ export function useWebSocket(url) {
                 break;
 
             case 'member_lookup_status':
-                if (!memberProfile) {  // Only show if we haven't found a member yet
+                if (!memberProfileRef.current) {  // Only show if we haven't found a member yet
                     setMemberLookupStatus(data);
                 }
                 break;
@@ -133,14 +140,23 @@ export function useWebSocket(url) {
                 break;
 
             case 'suggestion_chunk':
-                // Append chunk to existing suggestion
-                setSuggestion((prev) => prev + data.text);
+                // If the previous suggestion was marked stale, replace it entirely
+                // with the first chunk of the new stream. Otherwise append.
+                if (suggestionStaleRef.current) {
+                    setSuggestion(data.text);
+                    suggestionStaleRef.current = false;
+                } else {
+                    setSuggestion((prev) => prev + data.text);
+                }
                 setIsProcessing(false);
                 setProcessingMessage('');
                 break;
 
             case 'clear_suggestion':
-                setSuggestion('');
+            case 'suggestion_stale':
+                // Mark suggestion as stale. Keep the old text visible (greyed out)
+                // until the first chunk of the new stream replaces it.
+                suggestionStaleRef.current = true;
                 break;
 
             case 'intent':
@@ -150,10 +166,6 @@ export function useWebSocket(url) {
 
             case 'processing':
                 setIsProcessing(true);
-                // The new LangGraph stream triggers processing on EVERY tool invocation or reasoning loop.
-                // We MUST clear the suggestion buffer when a new HumanMessage kicks off another ReAct loop, 
-                // otherwise chunks will append to the old response.
-                setSuggestion('');
                 setProcessingMessage(data.message || 'Processing...');
                 break;
 
@@ -207,6 +219,7 @@ export function useWebSocket(url) {
         setIsProcessing(false);
         setProcessingMessage('');
         setPostCallEvaluation(null);
+        suggestionStaleRef.current = false;
         // Also reset backend state
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({ type: 'new_call' }));

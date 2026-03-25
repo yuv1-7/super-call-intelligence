@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../hooks/useWebSocket.js';
@@ -16,6 +16,8 @@ export function CallProvider({ children }) {
     const [callActive, setCallActive] = useState(false);
     const [showEvaluation, setShowEvaluation] = useState(false);
     const [postCallTab, setPostCallTab] = useState(0);
+    const [callElapsed, setCallElapsed] = useState(0);
+    const callTimerRef = useRef(null);
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const WS_URL = import.meta.env.DEV
@@ -58,6 +60,8 @@ export function CallProvider({ children }) {
         wsProps.resetState();
         setCallActive(true);
         setShowEvaluation(false);
+        setCallElapsed(0);
+        callTimerRef.current = setInterval(() => setCallElapsed(t => t + 1), 1000);
         navigate('/call');
         setTimeout(() => speech.toggleListening(), 300);
     };
@@ -67,6 +71,7 @@ export function CallProvider({ children }) {
         wsProps.endCall();
         setCallActive(false);
         setShowEvaluation(true);
+        clearInterval(callTimerRef.current);
     };
 
     const handleNewCall = () => {
@@ -74,6 +79,8 @@ export function CallProvider({ children }) {
         setCallActive(false);
         setShowEvaluation(false);
         setPostCallTab(0);
+        setCallElapsed(0);
+        clearInterval(callTimerRef.current);
     };
 
     const value = {
@@ -82,6 +89,7 @@ export function CallProvider({ children }) {
         callActive, setCallActive,
         showEvaluation, setShowEvaluation,
         postCallTab, setPostCallTab,
+        callElapsed,
         handleStartCall, handleEndCall, handleNewCall
     };
 

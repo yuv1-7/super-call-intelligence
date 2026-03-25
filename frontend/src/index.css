@@ -914,9 +914,6 @@ body {
   line-height: 1.7;
   color: var(--text-primary);
   padding: 4px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .suggestion-text .highlight-script {
@@ -1007,6 +1004,29 @@ body {
 .card.suggestion.empty::before {
   background: linear-gradient(90deg, var(--text-muted), var(--border-subtle));
   opacity: 0.3;
+}
+
+/* Suggestion updating state — old text fades while new stream loads */
+.card.suggestion.updating {
+  opacity: 0.55;
+  transition: opacity 0.3s ease;
+}
+.card.suggestion.updating .highlight-script {
+  animation: none;
+}
+
+/* ─── Call Timer ─── */
+.call-timer {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(248, 113, 113, 0.10);
+  color: var(--accent-red);
+  letter-spacing: 0.04em;
+  min-width: 48px;
+  text-align: center;
 }
 
 /* ─── Input Bar (Bottom) ─── */
