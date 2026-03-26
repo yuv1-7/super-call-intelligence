@@ -30,3 +30,6 @@ class AgentState(TypedDict):
     
     # Detected caller languages (BCP-47 tags from Deepgram)
     caller_languages: Optional[list]
+
+    # Text of the stall response already sent to the caller (to avoid double-empathy)
+    stall_response_sent: Optional[str]

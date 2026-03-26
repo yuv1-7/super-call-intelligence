@@ -273,6 +273,7 @@ def generate_system_prompt(
     knowledge_docs: Optional[list] = None,
     compliance_alerts: Optional[list] = None,
     caller_languages: Optional[list[str]] = None,
+    stall_response_sent: Optional[str] = None,
 ) -> str:
     """Dynamically builds the system message with current context."""
     if claim_type == "life_insurance":
@@ -288,6 +289,14 @@ def generate_system_prompt(
     compliance_text = _format_compliance_alerts(compliance_alerts)
     transcript_text = _truncate_transcript(full_transcript)
     langs_context = f"\nDetected Caller Languages (BCP-47): {', '.join(caller_languages)}" if caller_languages else ""
+    stall_context = ""
+    if stall_response_sent:
+        stall_context = f"""\n══════ STALL RESPONSE ALREADY SENT ══════
+The following brief acknowledgement has ALREADY been sent to the caller on your behalf:
+\"{stall_response_sent}\"
+
+CRITICAL: The caller has ALREADY heard this. Do NOT repeat condolences, empathy, apologies, or any transitional phrases from the above. Start your response with the FIRST substantive question or piece of information. For example, jump straight to asking for their policy number or asking what happened — do NOT say "I'm sorry to hear that" or similar again.
+══════════════════════════════════════════"""
     
     return f"""{base_rules}
 
@@ -314,5 +323,6 @@ Use the information above to guide the caller. Do NOT call `search_knowledge_bas
 {compliance_text}
 ════════════════════════════════
 These compliance alerts have been PRE-LOADED. Reference them directly — do NOT call `check_compliance_rules` unless you need compliance info on a DIFFERENT topic not covered above.
+{stall_context}
 """
 

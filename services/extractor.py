@@ -214,3 +214,60 @@ CRITICAL — Medical claim fields:
     )
 
     return response.choices[0].message.parsed.model_dump()
+
+
+# ═══════════════════════════════════════════════════════
+# STALL RESPONSE — Ultra-fast empathetic filler while
+# the main pipeline (intent + KB + facts + ReAct) runs
+# ═══════════════════════════════════════════════════════
+
+async def generate_stall_response(utterance: str, is_opening: bool = True):
+    """Generate a fast filler response for the agent to say while the main
+    pipeline processes. Yields tokens as an async generator for streaming.
+
+    Args:
+        utterance: The caller's latest text.
+        is_opening: True for the first utterance (empathetic tone),
+                    False for mid-call topic changes (transitional tone).
+    """
+
+    if is_opening:
+        system_prompt = """You are an insurance call center assistant. Generate a brief, empathetic acknowledgement for the agent to say to the caller while their account information is being retrieved.
+
+Rules:
+- Keep it to 1-2 SHORT sentences maximum (under 40 words)
+- Be warm, professional, and contextually appropriate to what the caller said
+- If the caller reports a loss or death, express brief sincere condolences
+- If the caller reports an accident, express concern for safety first
+- If it's a general inquiry, be helpful and reassuring
+- Always end with a natural transitional phrase like "Let me pull up your account right away..." or "Let me look into this for you immediately..."
+- Write the response FOR the agent to read verbatim to the caller
+- Do NOT ask for policy numbers, phone numbers, or any specific information
+- Do NOT ask any questions — this is purely an acknowledgement and transition
+- Output in the same language the caller is using (use Romanized/Latin script only, no Devanagari or other scripts)"""
+    else:
+        system_prompt = """You are an insurance call center assistant. The caller has just brought up a new topic or issue mid-call. Generate a very brief transitional acknowledgement for the agent to say while the system retrieves updated information.
+
+Rules:
+- Keep it to 1 SHORT sentence (under 20 words)
+- Be professional and reassuring — NOT empathetic or sympathetic (this is mid-call, not the opening)
+- Use a transitional phrase like "Sure, let me pull up the details on that for you..." or "Absolutely, let me look into that right away..."
+- Do NOT express condolences, sympathy, or concern — the caller is just changing topics
+- Do NOT ask any questions
+- Write the response FOR the agent to read verbatim to the caller
+- Output in the same language the caller is using (use Romanized/Latin script only)"""
+
+    response = await _get_client().chat.completions.create(
+        model=FAST_MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": utterance},
+        ],
+        temperature=0.4,
+        max_tokens=80,
+        stream=True,
+    )
+
+    async for chunk in response:
+        if chunk.choices and chunk.choices[0].delta.content:
+            yield chunk.choices[0].delta.content

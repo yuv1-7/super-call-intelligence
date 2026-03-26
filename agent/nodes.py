@@ -52,6 +52,7 @@ async def call_agent(state: AgentState) -> dict:
         knowledge_docs=state.get("knowledge_docs"),
         compliance_alerts=state.get("compliance_alerts"),
         caller_languages=state.get("caller_languages"),
+        stall_response_sent=state.get("stall_response_sent"),
     )
     
     # 2. Build the messages list (System + Conversation History)

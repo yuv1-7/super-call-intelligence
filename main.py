@@ -17,7 +17,7 @@ load_dotenv()
 
 from data.members import get_member, set_db_available
 from agent.graph import build_graph
-from services.extractor import extract_claim_facts, classify_intent
+from services.extractor import extract_claim_facts, classify_intent, generate_stall_response
 from services.evaluator import generate_post_call_evaluation
 from data.knowledge import search_knowledge, get_compliance_alerts, warmup as warmup_knowledge
 
@@ -546,6 +546,37 @@ async def stream_endpoint(websocket: WebSocket):
                     "data": {"message": "Analyzing transcript..."},
                 })
 
+                # ── Stall Agent setup ──
+                # Fires in two scenarios:
+                #   1. First customer utterance → empathetic filler (before Phase 1)
+                #   2. Claim type changes mid-call → transitional filler (after Phase 1)
+                # Runs as a parallel task with no shared mutable state.
+                # Awaited before ReAct to guarantee no interleaved suggestion_chunks.
+                stall_task = None
+                stall_text_parts: list[str] = []
+                kb_was_cached = proactive_kb_sent  # Snapshot before Phase 1 may flip it
+
+                # Scenario 1: First customer utterance — empathetic stall
+                if utterance_count == 0:
+                    async def _run_stall(
+                        _ws=websocket, _text=text, _parts=stall_text_parts,
+                    ):
+                        try:
+                            await safe_send(_ws, {"type": "suggestion_stale", "data": {}})
+                            async for token in generate_stall_response(_text, is_opening=True):
+                                _parts.append(token)
+                                alive = await safe_send(_ws, {
+                                    "type": "suggestion_chunk",
+                                    "data": {"text": token},
+                                })
+                                if not alive:
+                                    return
+                        except Exception as e:
+                            logger.warning(f"⏳ Stall agent error (non-blocking): {e}")
+
+                    stall_task = asyncio.create_task(_run_stall())
+                    logger.info("⏳ Stall agent fired — first customer utterance")
+
                 # Build full transcript string
                 formatted_transcript = "\n".join(
                     f"[{line['speaker']} {line['timestamp']}]: \"{line['text']}\""
@@ -615,6 +646,28 @@ async def stream_endpoint(websocket: WebSocket):
                             logger.info(f"Intent stabilized as '{detected_intent}' -- will re-check every 10th utterance")
                 else:
                     logger.info(f"Skipping intent classification (stable: {detected_intent}, utterance #{utterance_count})")
+
+                # Scenario 2: Claim type just changed mid-call → transitional stall
+                # Detected by: KB was cached before Phase 1 but is no longer (claim type changed)
+                if not stall_task and kb_was_cached and not proactive_kb_sent:
+                    async def _run_stall_mid(
+                        _ws=websocket, _text=text, _parts=stall_text_parts,
+                    ):
+                        try:
+                            await safe_send(_ws, {"type": "suggestion_stale", "data": {}})
+                            async for token in generate_stall_response(_text, is_opening=False):
+                                _parts.append(token)
+                                alive = await safe_send(_ws, {
+                                    "type": "suggestion_chunk",
+                                    "data": {"text": token},
+                                })
+                                if not alive:
+                                    return
+                        except Exception as e:
+                            logger.warning(f"⏳ Stall agent error (non-blocking): {e}")
+
+                    stall_task = asyncio.create_task(_run_stall_mid())
+                    logger.info("⏳ Stall agent fired — claim type changed, fetching new KB docs")
 
                 # ── Phase 2: Fact extraction, knowledge search, and compliance — in parallel ──
                 parallel_tasks = [
@@ -744,6 +797,22 @@ async def stream_endpoint(websocket: WebSocket):
                 if "en" not in customer_languages:
                     customer_languages.append("en")
 
+                # ── Await stall agent before streaming real suggestion ──
+                # The stall (~200ms) is certainly done by now (Phase 1+2 took ~1-2s),
+                # but we await explicitly to guarantee no suggestion_chunk interleaving.
+                stall_response_text = None
+                if stall_task:
+                    try:
+                        await asyncio.wait_for(stall_task, timeout=3.0)
+                    except asyncio.TimeoutError:
+                        stall_task.cancel()
+                        logger.warning("⏳ Stall agent timed out — proceeding with main suggestion")
+                    except Exception:
+                        pass  # Stall errors are non-blocking
+                    stall_response_text = "".join(stall_text_parts) if stall_text_parts else None
+                    if stall_response_text:
+                        logger.info(f"⏳ Stall response sent ({len(stall_response_text)} chars) — main suggestion will skip empathy")
+
                 # 2. Setup state for ReAct Agent — knowledge + compliance injected into prompt
                 state = {
                     "transcript": text,
@@ -756,6 +825,7 @@ async def stream_endpoint(websocket: WebSocket):
                     "knowledge_docs": knowledge_docs,  # Pre-fetched, injected into system prompt
                     "compliance_alerts": compliance_alerts,  # Pre-fetched, injected into system prompt
                     "caller_languages": customer_languages,  # Detected languages for multilingual support
+                    "stall_response_sent": stall_response_text,  # Avoid double-empathy in ReAct
                     "messages": []  # Empty on start, populated by graph iteratively
                 }
 
