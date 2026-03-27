@@ -829,13 +829,21 @@ async def stream_endpoint(websocket: WebSocket):
                     "messages": []  # Empty on start, populated by graph iteratively
                 }
 
-                # Mark the previous suggestion as stale so the frontend greys it out
-                # instead of flashing to empty. The frontend will replace it when
-                # the first suggestion_chunk of the new stream arrives.
-                await safe_send(websocket, {
-                    "type": "suggestion_stale",
-                    "data": {},
-                })
+                # Transition from stall → real suggestion:
+                # If a stall was sent, DON'T send suggestion_stale (which would
+                # cause the first real chunk to REPLACE the stall text). Instead,
+                # send a separator so the real suggestion appends BELOW the stall.
+                # If no stall was sent, mark the old suggestion as stale as usual.
+                if stall_response_text:
+                    await safe_send(websocket, {
+                        "type": "suggestion_chunk",
+                        "data": {"text": "\n\n───\n\n"},
+                    })
+                else:
+                    await safe_send(websocket, {
+                        "type": "suggestion_stale",
+                        "data": {},
+                    })
 
                 logger.info("🧠 Slow path: Starting Agent ReAct loop...")
                 
