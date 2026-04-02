@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -110,6 +110,43 @@ async def get_deepgram_token():
     if not deepgram_key:
         return JSONResponse({"error": "DEEPGRAM_API_KEY not configured on the server"}, status_code=500)
     return {"token": deepgram_key}
+
+
+# ─── Azure TTS Endpoint ─── #
+from pydantic import BaseModel
+
+class TTSRequest(BaseModel):
+    text: str
+
+@app.post("/api/tts")
+async def get_azure_tts(request: TTSRequest):
+    """
+    Generate Text-to-Speech audio from Azure Cognitive Services.
+    """
+    azure_key = os.getenv("AZURE_SPEECH_KEY")
+    region = os.getenv("AZURE_SPEECH_REGION", "eastus")
+    
+    if not azure_key:
+        return JSONResponse({"error": "Azure Speech API not configured"}, status_code=500)
+    
+    url = f"https://{region}.tts.speech.microsoft.com/cognitiveservices/v1"
+    headers = {
+        "Ocp-Apim-Subscription-Key": azure_key,
+        "Content-Type": "application/ssml+xml",
+        "X-Microsoft-OutputFormat": "audio-16khz-128kbitrate-mono-mp3",
+        "User-Agent": "CallIQ"
+    }
+    
+    # Use standard Azure US English female voice by default
+    ssml = f"<speak version='1.0' xml:lang='en-US'><voice xml:lang='en-US' xml:gender='Female' name='en-US-JennyNeural'>{request.text}</voice></speak>"
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, headers=headers, content=ssml.encode("utf-8"))
+        if response.status_code != 200:
+            logger.error(f"TTS Error {response.status_code}: {response.text}")
+            return JSONResponse({"error": "Failed to generate TTS audio"}, status_code=500)
+            
+        return Response(content=response.content, media_type="audio/mpeg")
 
 
 # ══════════════════════════════════════════════
@@ -927,6 +964,10 @@ async def stream_endpoint(websocket: WebSocket):
                             logger.error(f"Failed to parse tool output from {name}: {e}")
 
                 logger.info("🧠 Slow path: Stream complete.")
+                await safe_send(websocket, {
+                    "type": "suggestion_done",
+                    "data": {},
+                })
 
     except WebSocketDisconnect:
         logger.info("📞 WebSocket disconnected")

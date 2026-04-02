@@ -12,7 +12,7 @@ export default function CallPage() {
     const {
         callActive, showEvaluation, postCallTab, setPostCallTab,
         transcripts, memberProfile, memberLookupStatus, knowledgeDocs, complianceAlerts,
-        suggestion, postCallEvaluation, error: speechError, isListening, isProcessing
+        suggestion, isSuggestionDone, postCallEvaluation, error: speechError, isListening, isProcessing
     } = useCall();
 
     // Post-call evaluation view — full-width, replaces call content
@@ -86,7 +86,7 @@ export default function CallPage() {
                     </motion.main>
                 ) : (
                     <main className="cards-area">
-                        <SuggestionCard suggestion={suggestion} isProcessing={isProcessing} />
+                        <SuggestionCard suggestion={suggestion} isProcessing={isProcessing} isSuggestionDone={isSuggestionDone} />
                         <div className="cards-scroll">
                             <div className="cards-row">
                                 <KnowledgeCard docs={knowledgeDocs} />

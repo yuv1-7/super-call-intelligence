@@ -69,7 +69,7 @@ export default function GlobalHeader({ userRole }) {
                         <div className="call-buttons-group">
                             {!callActive && (
                                 <button className="btn-call btn-call--start" onClick={handleStartCall} disabled={!isConnected}>
-                                    📞 Start Call
+                                    ▶Start Call
                                 </button>
                             )}
                             {callActive && (

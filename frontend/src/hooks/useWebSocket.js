@@ -16,6 +16,7 @@ export function useWebSocket(url) {
     const [knowledgeDocs, setKnowledgeDocs] = useState([]);
     const [complianceAlerts, setComplianceAlerts] = useState([]);
     const [suggestion, setSuggestion] = useState('');
+    const [isSuggestionDone, setIsSuggestionDone] = useState(false);
     const [intent, setIntent] = useState(null);
     const [postCallEvaluation, setPostCallEvaluation] = useState(null);
     const [memberLookupStatus, setMemberLookupStatus] = useState(null);
@@ -149,7 +150,12 @@ export function useWebSocket(url) {
                     setSuggestion((prev) => prev + data.text);
                 }
                 setIsProcessing(false);
+                setIsSuggestionDone(false);
                 setProcessingMessage('');
+                break;
+
+            case 'suggestion_done':
+                setIsSuggestionDone(true);
                 break;
 
             case 'clear_suggestion':
@@ -157,6 +163,7 @@ export function useWebSocket(url) {
                 // Mark suggestion as stale. Keep the old text visible (greyed out)
                 // until the first chunk of the new stream replaces it.
                 suggestionStaleRef.current = true;
+                setIsSuggestionDone(false);
                 break;
 
             case 'intent':
@@ -215,6 +222,7 @@ export function useWebSocket(url) {
         setKnowledgeDocs([]);
         setComplianceAlerts([]);
         setSuggestion('');
+        setIsSuggestionDone(false);
         setIntent(null);
         setIsProcessing(false);
         setProcessingMessage('');
@@ -245,6 +253,7 @@ export function useWebSocket(url) {
         knowledgeDocs,
         complianceAlerts,
         suggestion,
+        isSuggestionDone,
         intent,
         postCallEvaluation,
         sendMessage,
