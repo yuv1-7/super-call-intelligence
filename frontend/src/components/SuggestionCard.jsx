@@ -1,4 +1,8 @@
+import { useCall } from '../context/CallContext.jsx';
+
 export default function SuggestionCard({ suggestion, isProcessing }) {
+    const { aiEnabled, aiSpeaking } = useCall();
+
     if (isProcessing && !suggestion) {
         return (
             <div className="card suggestion">
@@ -33,8 +37,6 @@ export default function SuggestionCard({ suggestion, isProcessing }) {
     }
 
     // Render as a single flowing block with visual paragraph breaks.
-    // Previous implementation split on \n\n into separate highlighted bubbles
-    // which made long scripts hard to read aloud.
     const paragraphs = suggestion
         .split('\n\n')
         .map(s => s.trim())
@@ -43,15 +45,21 @@ export default function SuggestionCard({ suggestion, isProcessing }) {
     const isUpdating = isProcessing && suggestion;
 
     return (
-        <div className={`card suggestion${isUpdating ? ' updating' : ''}`}>
+        <div className={`card suggestion${isUpdating ? ' updating' : ''}${aiSpeaking ? ' ai-speaking' : ''}`}>
             <div className="card-header">
                 <div className="card-icon">💡</div>
-                <div>
+                <div style={{ flex: 1 }}>
                     <div className="card-title">Suggested Response</div>
                     <div className="card-subtitle">
-                        {isUpdating ? 'Updating...' : 'Ready to use'}
+                        {aiSpeaking ? '🔊 Speaking...' : isUpdating ? 'Updating...' : 'Ready to use'}
                     </div>
                 </div>
+                {aiEnabled && (
+                    <div className={`ai-badge ${aiSpeaking ? 'speaking' : ''}`} title="AI Auto-Speak is enabled">
+                        🤖
+                        {aiSpeaking && <span className="ai-badge-pulse" />}
+                    </div>
+                )}
             </div>
             <div className="card-body">
                 <div className="suggestion-text">

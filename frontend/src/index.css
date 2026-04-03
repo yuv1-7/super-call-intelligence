@@ -5538,6 +5538,122 @@ body {
   color: #ef4444;
 }
 
+/* ─── AI Auto-Speak Toggle ─── */
+.btn-ai-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: all 0.3s cubic-bezier(0.23, 1, 0.320, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-ai-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: scale(1.03);
+}
+
+.btn-ai-toggle.active {
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.15) 0%, rgba(16, 185, 129, 0.08) 100%);
+  border-color: rgba(52, 211, 153, 0.4);
+  color: #34d399;
+  box-shadow: 0 0 16px rgba(52, 211, 153, 0.15), inset 0 0 12px rgba(52, 211, 153, 0.05);
+}
+
+.btn-ai-toggle.active:hover {
+  border-color: rgba(52, 211, 153, 0.5);
+  box-shadow: 0 0 24px rgba(52, 211, 153, 0.25), inset 0 0 12px rgba(52, 211, 153, 0.08);
+}
+
+.btn-ai-toggle.speaking {
+  animation: ai-glow-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes ai-glow-pulse {
+  0%, 100% { box-shadow: 0 0 16px rgba(52, 211, 153, 0.15), inset 0 0 12px rgba(52, 211, 153, 0.05); }
+  50% { box-shadow: 0 0 28px rgba(52, 211, 153, 0.35), inset 0 0 16px rgba(52, 211, 153, 0.1); }
+}
+
+.btn-ai-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.btn-ai-label {
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+}
+
+.ai-speaking-wave {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.08), transparent);
+  animation: ai-wave-sweep 1.8s ease-in-out infinite;
+}
+
+@keyframes ai-wave-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* ─── AI Badge in Suggestion Card ─── */
+.ai-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: rgba(52, 211, 153, 0.1);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  font-size: 0.95rem;
+  transition: all 0.3s;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.ai-badge.speaking {
+  background: rgba(52, 211, 153, 0.18);
+  border-color: rgba(52, 211, 153, 0.4);
+  animation: ai-badge-glow 1.2s ease-in-out infinite;
+}
+
+@keyframes ai-badge-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(52, 211, 153, 0.15); }
+  50% { box-shadow: 0 0 18px rgba(52, 211, 153, 0.35); }
+}
+
+.ai-badge-pulse {
+  position: absolute;
+  inset: -3px;
+  border-radius: 13px;
+  border: 2px solid rgba(52, 211, 153, 0.4);
+  animation: ai-badge-pulse-anim 1.5s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes ai-badge-pulse-anim {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.3); opacity: 0; }
+}
+
+/* Suggestion card speaking border effect */
+.card.suggestion.ai-speaking {
+  border-color: rgba(52, 211, 153, 0.25);
+  box-shadow: 0 0 20px rgba(52, 211, 153, 0.08);
+}
+
 /* Post-Call Container */
 .postcall-container { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
 .postcall-tabs { display: flex; border-bottom: 1px solid var(--border-subtle); padding: 0 20px; background: var(--bg-secondary); flex-shrink: 0; }

@@ -1,5 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
+// Tracks the latest fully-streamed suggestion for TTS consumption
+let _suggestionCompleteListeners = [];
+
 /**
  * Custom hook for WebSocket connection to the FastAPI backend.
  * Handles connection, reconnection, sending messages, and routing incoming data.
@@ -23,6 +26,8 @@ export function useWebSocket(url) {
     const wsRef = useRef(null);
     const reconnectTimerRef = useRef(null);
     const suggestionStaleRef = useRef(false);  // Track whether current suggestion is stale (being replaced)
+    const lastCommittedSuggestionRef = useRef('');  // The last fully-streamed suggestion text
+    const suggestionBuildingRef = useRef('');  // Accumulates chunks for current suggestion
     const memberProfileRef = useRef(null);     // Ref to track latest memberProfile (avoids stale closure in handleMessage)
 
     // Keep ref in sync with state so handleMessage always reads the live value
@@ -143,20 +148,42 @@ export function useWebSocket(url) {
                 // If the previous suggestion was marked stale, replace it entirely
                 // with the first chunk of the new stream. Otherwise append.
                 if (suggestionStaleRef.current) {
+                    // Do NOT speak the old suggestion — it's being replaced.
+                    // Just discard it silently and start fresh.
                     setSuggestion(data.text);
+                    suggestionBuildingRef.current = data.text;
                     suggestionStaleRef.current = false;
                 } else {
                     setSuggestion((prev) => prev + data.text);
+                    suggestionBuildingRef.current += data.text;
                 }
                 setIsProcessing(false);
                 setProcessingMessage('');
                 break;
 
             case 'clear_suggestion':
+                // The backend explicitly wants to clear the screen (e.g. removing stall filler)
+                // We wipe the visible text silently, without triggering the AI Voice
+                suggestionBuildingRef.current = '';
+                setSuggestion('');
+                suggestionStaleRef.current = false;
+                break;
+
             case 'suggestion_stale':
                 // Mark suggestion as stale. Keep the old text visible (greyed out)
                 // until the first chunk of the new stream replaces it.
                 suggestionStaleRef.current = true;
+                break;
+
+            case 'suggestion_complete':
+                // The REAL final suggestion has finished streaming!
+                // This is the ONLY trigger for the AI Voice to speak the text out loud.
+                if (suggestionBuildingRef.current.trim()) {
+                    lastCommittedSuggestionRef.current = suggestionBuildingRef.current;
+                    _notifySuggestionComplete(suggestionBuildingRef.current);
+                }
+                // Reset building ref so it doesn't get re-spoken on next cycle
+                suggestionBuildingRef.current = '';
                 break;
 
             case 'intent':
@@ -220,6 +247,8 @@ export function useWebSocket(url) {
         setProcessingMessage('');
         setPostCallEvaluation(null);
         suggestionStaleRef.current = false;
+        lastCommittedSuggestionRef.current = '';
+        suggestionBuildingRef.current = '';
         // Also reset backend state
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({ type: 'new_call' }));
@@ -251,5 +280,20 @@ export function useWebSocket(url) {
         sendRawMessage,
         endCall,
         resetState,
+    };
+}
+
+// ── Suggestion completion event system ──
+// Allows CallContext to subscribe to "suggestion complete" events for TTS
+function _notifySuggestionComplete(text) {
+    for (const fn of _suggestionCompleteListeners) {
+        try { fn(text); } catch (e) { console.error('Suggestion listener error:', e); }
+    }
+}
+
+export function onSuggestionComplete(fn) {
+    _suggestionCompleteListeners.push(fn);
+    return () => {
+        _suggestionCompleteListeners = _suggestionCompleteListeners.filter(f => f !== fn);
     };
 }

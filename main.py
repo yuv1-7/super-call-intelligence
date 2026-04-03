@@ -830,20 +830,14 @@ async def stream_endpoint(websocket: WebSocket):
                 }
 
                 # Transition from stall → real suggestion:
-                # If a stall was sent, DON'T send suggestion_stale (which would
-                # cause the first real chunk to REPLACE the stall text). Instead,
-                # send a separator so the real suggestion appends BELOW the stall.
-                # If no stall was sent, mark the old suggestion as stale as usual.
-                if stall_response_text:
-                    await safe_send(websocket, {
-                        "type": "suggestion_chunk",
-                        "data": {"text": "\n\n───\n\n"},
-                    })
-                else:
-                    await safe_send(websocket, {
-                        "type": "suggestion_stale",
-                        "data": {},
-                    })
+                # ALWAYS send suggestion_stale before the real suggestion.
+                # This tells the frontend to discard the stall filler text from
+                # its TTS building ref, so only the real suggestion gets spoken.
+                # The stall text served its purpose (visual filler while processing).
+                await safe_send(websocket, {
+                    "type": "suggestion_stale",
+                    "data": {},
+                })
 
                 logger.info("🧠 Slow path: Starting Agent ReAct loop...")
                 
@@ -925,6 +919,12 @@ async def stream_endpoint(websocket: WebSocket):
                                 })
                         except Exception as e:
                             logger.error(f"Failed to parse tool output from {name}: {e}")
+
+                # Ping frontend that suggestion has fully completed generating
+                await safe_send(websocket, {
+                    "type": "suggestion_complete",
+                    "data": {},
+                })
 
                 logger.info("🧠 Slow path: Stream complete.")
 

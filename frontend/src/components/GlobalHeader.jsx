@@ -7,7 +7,8 @@ export default function GlobalHeader({ userRole }) {
     const {
         isConnected, isProcessing, processingMessage, isListening,
         callActive, showEvaluation, intent, callElapsed,
-        handleStartCall, handleEndCall, handleNewCall, toggleListening
+        handleStartCall, handleEndCall, handleNewCall, toggleListening,
+        aiEnabled, aiSpeaking, handleToggleAi
     } = useCall();
 
     const timerStr = callActive
@@ -68,12 +69,34 @@ export default function GlobalHeader({ userRole }) {
                     ) : (
                         <div className="call-buttons-group">
                             {!callActive && (
-                                <button className="btn-call btn-call--start" onClick={handleStartCall} disabled={!isConnected}>
-                                    📞 Start Call
-                                </button>
+                                <>
+                                    <button
+                                        className={`btn-ai-toggle ${aiEnabled ? 'active' : ''}`}
+                                        onClick={handleToggleAi}
+                                        title={aiEnabled ? 'Disable AI Auto-Speak' : 'Enable AI Auto-Speak'}
+                                        id="ai-toggle-btn"
+                                    >
+                                        <span className="btn-ai-icon">{aiEnabled ? '🤖' : '🤖'}</span>
+                                        <span className="btn-ai-label">{aiEnabled ? 'AI On' : 'AI Off'}</span>
+                                        {aiSpeaking && <span className="ai-speaking-wave" />}
+                                    </button>
+                                    <button className="btn-call btn-call--start" onClick={handleStartCall}>
+                                        📞 Start Call
+                                    </button>
+                                </>
                             )}
                             {callActive && (
                                 <>
+                                    <button
+                                        className={`btn-ai-toggle ${aiEnabled ? 'active' : ''} ${aiSpeaking ? 'speaking' : ''}`}
+                                        onClick={handleToggleAi}
+                                        title={aiEnabled ? 'Disable AI Auto-Speak' : 'Enable AI Auto-Speak'}
+                                        id="ai-toggle-btn"
+                                    >
+                                        <span className="btn-ai-icon">{aiEnabled ? '🤖' : '🤖'}</span>
+                                        <span className="btn-ai-label">{aiEnabled ? 'AI On' : 'AI Off'}</span>
+                                        {aiSpeaking && <span className="ai-speaking-wave" />}
+                                    </button>
                                     <button
                                         className={`btn-mic ${isListening ? 'active' : ''}`}
                                         onClick={toggleListening}
