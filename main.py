@@ -7,6 +7,7 @@ import time
 import asyncio
 import os
 from contextlib import asynccontextmanager
+import httpx
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,17 +31,24 @@ graph = None
 # ─── DB availability flag ─── #
 _db_ready = False
 
+# ─── Global HTTP Client for TTS (persisted logic) ─── #
+_tts_client = None
+
 DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global graph, _db_ready
+    global graph, _db_ready, _tts_client
     logger.info("🚀 Building LangGraph pipeline...")
     graph = build_graph()
     logger.info("✅ LangGraph ready.")
     logger.info("🔥 Pre-loading knowledge module...")
     warmup_knowledge()
+    
+    # Initialize persistent HTTPX client for TTS (improves latency significantly)
+    _tts_client = httpx.AsyncClient(timeout=15.0)
+    
     logger.info("✅ Server is live.")
 
     # ─── Initialize PostgreSQL connection pool ─── #
@@ -67,6 +75,10 @@ async def lifespan(app: FastAPI):
     if _db_ready:
         from db.connection import close_pool
         await close_pool()
+        
+    if _tts_client:
+        await _tts_client.aclose()
+        
     logger.info("🛑 Server shutting down.")
 
 
@@ -110,6 +122,77 @@ async def get_deepgram_token():
     if not deepgram_key:
         return JSONResponse({"error": "DEEPGRAM_API_KEY not configured on the server"}, status_code=500)
     return {"token": deepgram_key}
+
+
+# ─── Azure TTS Endpoint ─── #
+
+@app.post("/api/azure-tts")
+async def azure_tts(request: Request):
+    """
+    Synthesize speech using Azure Speech Service.
+    Supports Hindi (hi-IN) and English (en-US) with native neural voices.
+    Accepts JSON: { "text": "...", "language": "hi" | "en" }
+    Returns audio/mpeg stream.
+    """
+    speech_key = os.getenv("AZURE_SPEECH_KEY", "")
+    speech_region = os.getenv("AZURE_SPEECH_REGION", "eastus")
+
+    if not speech_key:
+        return JSONResponse({"error": "AZURE_SPEECH_KEY not configured"}, status_code=500)
+
+    body = await request.json()
+    text = body.get("text", "").strip()
+    language = body.get("language", "en").strip().lower()
+
+    if not text:
+        return JSONResponse({"error": "No text provided"}, status_code=400)
+
+    # Select voice and lang tag based on detected language
+    if language.startswith("hi"):
+        voice_name = "hi-IN-SwaraNeural"
+        lang_tag = "hi-IN"
+    else:
+        voice_name = "en-US-JennyNeural"
+        lang_tag = "en-US"
+
+    # Build SSML
+    ssml = (
+        f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="{lang_tag}">'
+        f'<voice name="{voice_name}">{text}</voice>'
+        f'</speak>'
+    )
+
+    endpoint = f"https://{speech_region}.tts.speech.microsoft.com/cognitiveservices/v1"
+    headers = {
+        "Ocp-Apim-Subscription-Key": speech_key,
+        "Content-Type": "application/ssml+xml",
+        "X-Microsoft-OutputFormat": "audio-16khz-32kbitrate-mono-mp3", # Lower bitrate to reduce latency
+        "User-Agent": "CallIQ-TTS",
+    }
+
+    try:
+        if _tts_client:
+            resp = await _tts_client.post(endpoint, headers=headers, content=ssml.encode("utf-8"))
+        else:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(endpoint, headers=headers, content=ssml.encode("utf-8"))
+
+        if resp.status_code != 200:
+            logger.error(f"Azure TTS error: {resp.status_code} — {resp.text[:200]}")
+            return JSONResponse(
+                {"error": f"Azure TTS failed: {resp.status_code}"},
+                status_code=502,
+            )
+
+        from fastapi.responses import Response
+        return Response(
+            content=resp.content,
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": "inline"},
+        )
+    except Exception as e:
+        logger.error(f"Azure TTS request error: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 # ══════════════════════════════════════════════

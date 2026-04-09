@@ -11,9 +11,65 @@ export function useCall() {
     return useContext(CallContext);
 }
 
-// ── Deepgram TTS Helper ──
+// ── Language Detection Utility ──
+// Detects whether text contains Hindi (Devanagari or Romanized) content.
+// Returns "hi" for Hindi/mixed, "en" for pure English.
+function detectLanguage(text) {
+    if (!text) return 'en';
+
+    // Check for Devanagari Unicode range (U+0900 – U+097F)
+    const devanagariRegex = /[\u0900-\u097F]/;
+    if (devanagariRegex.test(text)) return 'hi';
+
+    // Common Romanized Hindi words/patterns (case-insensitive)
+    // These are words that almost never appear in pure English context
+    const hindiPatterns = [
+        /\b(aap|aapka|aapki|aapke)\b/i,
+        /\b(kya|kaise|kahan|kab|kaun|kyun|kyunki)\b/i,
+        /\b(hai|hain|tha|thi|the|hoga|hogi)\b/i,
+        /\b(mein|mera|meri|mere|humara|humari|humare)\b/i,
+        /\b(yeh|woh|iska|iski|iske|uska|uski|uske)\b/i,
+        /\b(kar|karna|karein|karenge|kijiye|dijiye|bataiye)\b/i,
+        /\b(nahi|nahin|naa|mat|bilkul)\b/i,
+        /\b(ji|haan|achha|theek|sahi|zaroor|zaruri)\b/i,
+        /\b(ke liye|ke baare|ke saath|se pehle|ke baad)\b/i,
+        /\b(samajh|baat|kaam|dost|ghar|rasta)\b/i,
+        /\b(aur|lekin|ya|phir|toh|bhi|sirf)\b/i,
+        /\b(bahut|thoda|zyada|kam|puri|poori)\b/i,
+        /\b(pehle|abhi|baad|jaldi|kal)\b/i,
+        /\b(namaste|dhanyavaad|shukriya|alvida)\b/i,
+        /\b(policy\s+number\s+bata|claim\s+kar|insurance\s+ke)\b/i,
+        /\b(durghatna|bima|suraksha|ilaj)\b/i,
+    ];
+
+    let hindiWordCount = 0;
+    for (const pattern of hindiPatterns) {
+        if (pattern.test(text)) {
+            hindiWordCount++;
+        }
+        // If we find 2+ Hindi patterns, it's definitely Hindi/mixed
+        if (hindiWordCount >= 2) return 'hi';
+    }
+
+    return 'en';
+}
+
+// ── Unicode-Aware Text Normalizer ──
+// Preserves Hindi (Devanagari U+0900-097F) + Latin alphanumerics for echo matching.
+// The old /[^a-z0-9 ]/g regex stripped ALL Hindi characters, breaking echo
+// detection and causing infinite TTS feedback loops with Hindi content.
+function normalizeForMatch(text) {
+    if (!text) return '';
+    return text
+        .toLowerCase()
+        .replace(/[^a-z0-9\u0900-\u097F ]/g, '')  // Keep Latin + Devanagari + spaces
+        .replace(/\s+/g, ' ')                       // Collapse whitespace
+        .trim();
+}
+
+// ── Deepgram TTS Helper (English only) ──
 // Calls Deepgram REST TTS API and returns an audio blob URL
-async function synthesizeSpeech(text, apiKey) {
+async function synthesizeDeepgramSpeech(text, apiKey) {
     const res = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=mp3', {
         method: 'POST',
         headers: {
@@ -27,6 +83,51 @@ async function synthesizeSpeech(text, apiKey) {
     }
     const blob = await res.blob();
     return URL.createObjectURL(blob);
+}
+
+// ── Azure TTS Helper (Hindi + English) ──
+// Calls our backend proxy which talks to Azure Speech Service
+async function synthesizeAzureSpeech(text, language) {
+    const baseUrl = import.meta.env.DEV
+        ? `http://${window.location.hostname}:8000`
+        : '';
+    const res = await fetch(`${baseUrl}/api/azure-tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, language }),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(`Azure TTS failed: ${res.status} ${err.error || res.statusText}`);
+    }
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+}
+
+// ── Text Extraction Helper ──
+// The LLM often outputs both English instructions (e.g., "Since the policy is not available, say:")
+// AND the actual script (e.g., "कोई बात नहीं..."). We only want the TTS to speak the script.
+function extractSpeakableText(text) {
+    if (!text) return '';
+
+    // 1. Look for text in quotes (the most common format for the actual script)
+    const quoteMatches = text.match(/"([^"]+)"/g);
+    if (quoteMatches && quoteMatches.length > 0) {
+        // Return the last quoted string (usually the actual script)
+        const lastQuote = quoteMatches[quoteMatches.length - 1];
+        return lastQuote.replace(/"/g, '').trim();
+    }
+
+    // 2. Look for Devanagari text (Hindi script)
+    // The instructions are almost always in English, while the script is in Hindi.
+    // If we find a block of text with Devanagari characters, that's the script.
+    const devanagariBlock = text.split('\n').find(line => /[\u0900-\u097F]/.test(line));
+    if (devanagariBlock) {
+        return devanagariBlock.replace(/^[A-Za-z\s:-]+/, '').trim(); // Remove leading English labels
+    }
+
+    // 3. Fallback: Speak the whole thing
+    return text;
 }
 
 export function CallProvider({ children }) {
@@ -69,7 +170,7 @@ export function CallProvider({ children }) {
         }
     }, [wsProps.isConnected, userId, wsProps.sendRawMessage]);
 
-    // ── Fetch and cache Deepgram key ──
+    // ── Fetch and cache Deepgram key (for English TTS fallback) ──
     const ensureDgKey = useCallback(async () => {
         if (dgKeyRef.current) return dgKeyRef.current;
         const baseUrl = import.meta.env.DEV
@@ -85,7 +186,8 @@ export function CallProvider({ children }) {
     const lastAiSpeechEndTimeRef = useRef(0);
     const recentlySpokenRef = useRef([]);
 
-    // ── Deepgram TTS Helper ──
+    // ── TTS Helper ──
+    // Routes to Azure so the agent voice is consistently SwaraNeural (bilingual)
     const speakText = useCallback(async (text) => {
         if (!text || !text.trim()) return;
 
@@ -98,13 +200,49 @@ export function CallProvider({ children }) {
 
         if (!cleanText) return;
 
+        // Extract ONLY the actual agent script, not the LLM's English instructions
+        const speakableText = extractSpeakableText(cleanText);
+        if (!speakableText) return;
+
         try {
-            const key = await ensureDgKey();
-            const audioUrl = await synthesizeSpeech(cleanText, key);
-            
+            // Add Agent's speech to the UI transcript immediately since we drop echoes
+            const offset = callTimerRef.current ? callElapsed : 0;
+            const h = Math.floor(offset / 3600);
+            const m = Math.floor((offset % 3600) / 60);
+            const s = Math.floor(offset % 60);
+            const timestamp = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+
+            wsProps.addTranscript({
+                text: speakableText, // Display the extracted text in the UI transcript
+                is_finalized: true,
+                speaker: 'Agent',
+                timestamp,
+                offset,
+            });
+
+            // Ensure the backend also receives this transcript so the LLM remembers what it said
+            const lang = detectLanguage(speakableText);
+            if (wsProps.sendMessage) {
+                // Send the extracted text, not the full instruction
+                wsProps.sendMessage(speakableText, true, '0', offset, lang === 'hi' ? ['hi'] : ['en']);
+            }
+
+            // Route all speech through Azure for consistent bilingual voice
+            console.log('🗣️ TTS: Routing to Azure Speech Service');
+            let audioUrl;
+            try {
+                // Determine language hint for Azure (though SwaraNeural is bilingual)
+                // Sending the extracted text specifically
+                audioUrl = await synthesizeAzureSpeech(speakableText, lang === 'hi' ? 'hi' : 'en');
+            } catch (azureErr) {
+                console.warn('🗣️ TTS: Azure failed, falling back to Deepgram:', azureErr.message);
+                const key = await ensureDgKey();
+                audioUrl = await synthesizeDeepgramSpeech(speakableText, key);
+            }
+
             // If AI was disabled while we were fetching, bail
             if (!aiEnabledRef.current) {
-                URL.revokeObjectURL(audioUrl);
+                if (audioUrl) URL.revokeObjectURL(audioUrl);
                 return;
             }
 
@@ -113,7 +251,7 @@ export function CallProvider({ children }) {
             setAiSpeaking(true);
             isSpeakingRef.current = true;
             
-            recentlySpokenRef.current.push(cleanText.toLowerCase().replace(/[^a-z0-9 ]/g, ''));
+            recentlySpokenRef.current.push(normalizeForMatch(speakableText));
             if (recentlySpokenRef.current.length > 5) {
                 recentlySpokenRef.current.shift();
             }
@@ -133,7 +271,7 @@ export function CallProvider({ children }) {
             lastAiSpeechEndTimeRef.current = Date.now();
             audioRef.current = null;
         }
-    }, [ensureDgKey]);
+    }, [callElapsed, wsProps, ensureDgKey]);
 
     // ── Queue-based TTS: process texts one at a time ──
     const processTtsQueue = useCallback(async () => {
@@ -174,7 +312,7 @@ export function CallProvider({ children }) {
             if (!clean) return;
 
             // Deduplicate: don't speak the exact same text back-to-back
-            const normalized = clean.toLowerCase().replace(/[^a-z0-9 ]/g, '');
+            const normalized = normalizeForMatch(clean);
             if (normalized === lastSpokenTextRef.current) {
                 console.log('🤖 AI Auto-Speak: skipping duplicate suggestion');
                 return;
@@ -192,22 +330,27 @@ export function CallProvider({ children }) {
 
     const onTranscript = useCallback(
         (event) => {
-            // Fallback STT latency hook + explicit text match to override AI audio picked up by mic
+            // ── AI Echo Detection ──
+            // When TTS plays through speakers, the microphone picks it up.
+            // We must DROP these echo'd transcripts entirely so they don't loop.
             const timeSinceAiSpoke = Date.now() - lastAiSpeechEndTimeRef.current;
-            let isAiEcho = false;
             
-            if (event.speaker === '1' && event.text?.trim()) {
-                const normText = event.text.toLowerCase().replace(/[^a-z0-9 ]/g, '');
-                for (const spoken of recentlySpokenRef.current) {
-                    if (spoken.includes(normText) || normText.includes(spoken) || spoken.length > 10 && normText.length > 10 && (spoken.startsWith(normText.substring(0, 10)) || normText.startsWith(spoken.substring(0, 10)))) {
-                        isAiEcho = true;
-                        break;
-                    }
-                }
+            // Check 1: AI is currently speaking or just finished (<800ms ago)
+            // (Reduced from 5000ms to 800ms to avoid blocking fast human replies)
+            if (isSpeakingRef.current || timeSinceAiSpoke < 800) {
+                console.log(`🔇 Dropping echo (speaker ${event.speaker}, AI active):`, event.text?.slice(0, 40));
+                return; // DROP
             }
 
-            if (event.speaker === '1' && (isSpeakingRef.current || timeSinceAiSpoke < 5000 || isAiEcho)) {
-                event.speaker = '0';
+            // Check 2: Text matches something we recently spoke
+            if (event.text?.trim()) {
+                const normText = normalizeForMatch(event.text);
+                for (const spoken of recentlySpokenRef.current) {
+                    if (normText && spoken && (spoken.includes(normText) || normText.includes(spoken) || spoken.length > 10 && normText.length > 10 && (spoken.startsWith(normText.substring(0, 10)) || normText.startsWith(spoken.substring(0, 10))))) {
+                        console.log('🔇 Dropping echo (text match):', event.text?.slice(0, 40));
+                        return; // DROP
+                    }
+                }
             }
 
             const speakerLabel = event.speaker === '0' ? 'Agent' : event.speaker === '1' ? 'Customer' : `Speaker ${event.speaker}`;
