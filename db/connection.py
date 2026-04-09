@@ -30,6 +30,7 @@ async def init_pool() -> asyncpg.Pool:
         min_size=2,
         max_size=10,
         command_timeout=10,
+        timeout=5.0,
     )
     logger.info("✅ PostgreSQL connection pool initialized")
     return _pool
